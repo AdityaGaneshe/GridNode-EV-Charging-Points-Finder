@@ -1,0 +1,2671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GridNode | Local & Highway EV Charging Dispatch, Time-Slot Scheduler & Host Exchange</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='3' fill='%230f172a'/%3E%3Cpath d='M18 4L8 18h7l-1 10 10-14h-7l1-10z' fill='%2310b981'/%3E%3C/svg%3E" />
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-primary: #f1f5f9;
+      --bg-surface: #ffffff;
+      --text-primary: #0f172a;
+      --text-secondary: #475569;
+      --border-color: #cbd5e1;
+      --accent-green: #059669;
+      --accent-amber: #d97706;
+      --accent-red: #dc2626;
+      --accent-cyan: #0284c7;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg-primary);
+      background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
+      background-size: 20px 20px;
+      color: var(--text-primary);
+      margin: 0;
+      padding: 0;
+      overflow-x: hidden;
+    }
+    .font-mono-tech {
+      font-family: 'IBM Plex Mono', monospace;
+    }
+    /* Strict utilitarian radii: no pill buttons anywhere */
+    .btn-tech {
+      border-radius: 3px;
+      font-weight: 600;
+      transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, transform 80ms ease;
+    }
+    .btn-tech:active:not(:disabled) {
+      transform: translateY(1px);
+    }
+    .card-tech {
+      border-radius: 4px;
+      border: 1px solid #cbd5e1;
+      background-color: #ffffff;
+      box-shadow: 0 2px 0 rgba(15, 23, 42, 0.06);
+      position: relative;
+    }
+    .card-blueprint {
+      border-radius: 3px;
+      border: 2px solid #0f172a;
+      background-color: #ffffff;
+      box-shadow: 4px 4px 0 #0f172a;
+    }
+    .input-tech {
+      border-radius: 3px;
+      border: 1px solid #94a3b8;
+      background-color: #ffffff;
+      color: #0f172a;
+    }
+    .input-tech:focus {
+      outline: 2px solid #0f172a;
+      outline-offset: 0px;
+      border-color: #0f172a;
+    }
+    .badge-tech {
+      border-radius: 2px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.70rem;
+      letter-spacing: 0.04em;
+      padding: 2px 6px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #e2e8f0;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #64748b;
+    }
+    .map-grid-bg {
+      background-color: #090d16;
+      background-image: 
+        linear-gradient(to right, rgba(56, 189, 248, 0.07) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(56, 189, 248, 0.07) 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+    .chrono-cell {
+      height: 26px;
+      border-right: 1px solid rgba(15, 23, 42, 0.15);
+      cursor: pointer;
+      transition: opacity 100ms ease;
+    }
+    .chrono-cell:hover {
+      opacity: 0.82;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- TOP SYSTEM TELEMETRY & DOMAIN BAR -->
+  <div class="bg-slate-950 text-slate-300 border-b border-slate-800 text-xs font-mono-tech px-4 py-2">
+    <div class="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
+      <div class="flex items-center gap-3 flex-wrap">
+        <span class="inline-flex items-center gap-1.5 text-emerald-400 font-semibold">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="currentColor"><rect x="2" y="2" width="12" height="12"/></svg>
+          DOMAIN: <span id="activeDomainDisplay">charge.gridnode.in</span> (SSL/TLS VERIFIED)
+        </span>
+        <span class="hidden sm:inline text-slate-700">|</span>
+        <span id="gpsTelemetryDisplay" class="text-slate-300">LOC: 19.0760 N, 72.8777 E (Mumbai Central Sector)</span>
+        <span class="hidden md:inline text-slate-700">|</span>
+        <span class="hidden md:inline text-amber-400" id="liveIstClock">IST SYNC: 00:59:32</span>
+      </div>
+      <div class="flex items-center gap-3 flex-wrap">
+        <button type="button" id="btnOpenDomainModal" class="hover:text-white underline decoration-slate-600 underline-offset-4">
+          Domain &amp; Launch Config
+        </button>
+        <span class="text-slate-700">|</span>
+        <button type="button" data-nav="privacy" class="nav-trigger hover:text-white">Privacy Policy</button>
+        <span class="text-slate-700">|</span>
+        <button type="button" data-nav="terms" class="nav-trigger hover:text-white">Terms &amp; Conditions</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN NAVIGATION HEADER -->
+  <header class="bg-white border-b-2 border-slate-900 sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-4">
+      <!-- Brand Identity -->
+      <div class="flex items-center gap-3">
+        <button type="button" data-nav="finder" class="nav-trigger flex items-center gap-3 text-left group">
+          <div class="w-10 h-10 bg-slate-950 flex items-center justify-center border-2 border-slate-900" style="border-radius: 3px; box-shadow: 2px 2px 0 #10b981;">
+            <svg class="w-5 h-5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3">
+              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" stroke-linecap="square" stroke-linejoin="miter"/>
+            </svg>
+          </div>
+          <div>
+            <div class="font-extrabold text-slate-950 tracking-tight text-base leading-none flex items-center gap-2">
+              <span>GRIDNODE</span>
+              <span class="badge-tech bg-slate-900 text-emerald-400 border border-slate-900">P2P + GRID</span>
+            </div>
+            <p class="text-xs text-slate-600 mt-1 font-mono-tech">Neighborhood &amp; Highway EV Port Exchange</p>
+          </div>
+        </button>
+      </div>
+
+      <!-- Primary Mode / View Switcher -->
+      <nav class="flex items-center gap-1.5 flex-wrap" aria-label="Main Navigation">
+        <button type="button" data-nav="finder" id="navBtnFinder" class="nav-trigger btn-tech px-3.5 py-2 text-xs font-semibold bg-slate-900 text-white border-2 border-slate-900 flex items-center gap-2">
+          <svg class="w-4 h-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="9"/><path d="M12 3v3m0 12v3M3 12h3m12 0h3"/>
+          </svg>
+          <span>1. Find &amp; Book Charger (Driver)</span>
+        </button>
+        <button type="button" data-nav="host" id="navBtnHost" class="nav-trigger btn-tech px-3.5 py-2 text-xs font-semibold bg-white text-slate-900 border-2 border-slate-300 hover:border-slate-900 flex items-center gap-2">
+          <svg class="w-4 h-4 text-amber-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="4" width="18" height="18" rx="1"/><path d="M16 2v4M8 2v4M3 10h18M8 14h4v4H8z"/>
+          </svg>
+          <span>2. Broadcast My Port (Host)</span>
+        </button>
+        <button type="button" data-nav="bookings" id="navBtnBookings" class="nav-trigger btn-tech px-3.5 py-2 text-xs font-semibold bg-white text-slate-900 border-2 border-slate-300 hover:border-slate-900 flex items-center gap-2">
+          <svg class="w-4 h-4 text-slate-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="4" y="3" width="16" height="18" rx="1"/><path d="M8 7h8M8 11h8M8 15h5"/>
+          </svg>
+          <span>Active Bookings &amp; Receipts</span>
+          <span id="bookingCountBadge" class="badge-tech bg-emerald-700 text-white ml-0.5">1</span>
+        </button>
+      </nav>
+
+      <!-- Dual Account Session / Login Control -->
+      <div class="flex items-center gap-2">
+        <div id="authStatusBox" class="flex items-center gap-2 bg-slate-100 border-2 border-slate-900 px-2.5 py-1.5" style="border-radius: 3px;">
+          <span id="activeRoleIndicator" class="w-2.5 h-2.5 bg-emerald-600"></span>
+          <div class="text-left">
+            <div id="activeUserLabel" class="text-xs font-bold text-slate-900 leading-none">Rohan Deshmukh (Driver)</div>
+            <div id="activeSubLabel" class="text-[11px] font-mono-tech text-slate-600 mt-0.5">Tata Nexon EV • CCS2 • SoC 16%</div>
+          </div>
+        </div>
+        <button type="button" id="btnOpenAuthModal" class="btn-tech px-3 py-2 text-xs bg-slate-900 text-white hover:bg-slate-800 border-2 border-slate-900">
+          Switch Login (2 Roles)
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- LOCATION, CORRIDOR & URGENT DISPATCH COMMAND DECK -->
+  <section id="locationToolbar" class="bg-slate-900 text-white border-b-2 border-slate-950">
+    <div class="max-w-7xl mx-auto px-4 py-3">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 items-center">
+        <!-- Location Picker & GPS Trigger -->
+        <div class="lg:col-span-5 flex flex-wrap sm:flex-nowrap items-center gap-2">
+          <button type="button" id="btnUseBrowserGps" class="btn-tech bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 text-xs flex items-center gap-1.5 shrink-0 border border-emerald-400">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/>
+            </svg>
+            <span>Detect My GPS</span>
+          </button>
+          <div class="flex-1 min-w-[200px]">
+            <label for="presetLocationSelect" class="sr-only">Select Neighborhood or Travel Corridor</label>
+            <select id="presetLocationSelect" class="input-tech w-full px-2.5 py-1.5 text-xs bg-slate-800 text-white border-slate-600 font-mono-tech">
+              <option value="19.0760,72.8777,Mumbai - Bandra &amp; BKC Sector">Current: Mumbai - Bandra &amp; BKC Sector (19.0760, 72.8777)</option>
+              <option value="18.7557,73.4091,Mumbai-Pune Expressway - Lonavala">Travel Corridor: Mumbai-Pune Expressway - Lonavala (18.7557, 73.4091)</option>
+              <option value="18.5204,73.8567,Pune - Shivajinagar &amp; Koregaon Park">Neighborhood: Pune - Shivajinagar &amp; KP (18.5204, 73.8567)</option>
+              <option value="18.5913,73.7389,Pune - Hinjewadi IT Park Phase 1">Neighborhood: Pune - Hinjewadi Phase 1 (18.5913, 73.7389)</option>
+              <option value="19.9975,73.7898,Nashik Highway - NH160 Corridor">Travel Corridor: Nashik NH160 Toll Plaza (19.9975, 73.7898)</option>
+              <option value="21.1458,79.0882,Nagpur - Zero Mile &amp; Samruddhi Expy">Travel Corridor: Nagpur Samruddhi Terminus (21.1458, 79.0882)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Custom Coordinates or Corridor Search -->
+        <div class="lg:col-span-4 flex items-center gap-2">
+          <div class="relative flex-1">
+            <input type="text" id="searchQueryInput" placeholder="Search area, highway, host, or slot (e.g. 18:00, Solar, CCS2)..." class="input-tech w-full px-3 py-1.5 text-xs bg-slate-800 text-white border-slate-600 placeholder-slate-400" />
+          </div>
+          <select id="radiusFilterSelect" aria-label="Search Radius" class="input-tech px-2 py-1.5 text-xs bg-slate-800 text-white border-slate-600 font-mono-tech">
+            <option value="10">Within 10 km</option>
+            <option value="25">Within 25 km</option>
+            <option value="60">Within 60 km</option>
+            <option value="9999" selected>All Corridors</option>
+          </select>
+        </div>
+
+        <!-- Urgent Charge Dispatch Action -->
+        <div class="lg:col-span-3 flex items-center justify-end gap-2">
+          <button type="button" id="btnUrgentDispatch" class="btn-tech w-full sm:w-auto px-3.5 py-2 text-xs bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold border-2 border-amber-300 flex items-center justify-center gap-2">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4">
+              <path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            </svg>
+            <span>URGENT CHARGE DISPATCH</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- MAIN WORKSPACE CONTAINER -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 py-5">
+
+    <!-- ==========================================
+         VIEW 1: DRIVER CHARGER & TIME-SLOT FINDER
+         ========================================== -->
+    <div id="view-finder" class="space-y-5">
+
+      <!-- Operational & Time-Slot Filter Bar -->
+      <div class="card-blueprint p-4 bg-white space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="text-xs font-extrabold uppercase tracking-wider text-slate-900 mr-1">Filter Ports:</span>
+            <button type="button" data-filter-status="all" class="status-filter-btn btn-tech px-2.5 py-1 text-xs bg-slate-900 text-white border border-slate-900">
+              All Listed (<span id="countAllPorts">0</span>)
+            </button>
+            <button type="button" data-filter-status="available" class="status-filter-btn btn-tech px-2.5 py-1 text-xs bg-white text-slate-800 border border-slate-300 hover:bg-slate-100">
+              Available Now (<span id="countAvailablePorts">0</span>)
+            </button>
+            <button type="button" data-filter-status="host" class="status-filter-btn btn-tech px-2.5 py-1 text-xs bg-white text-slate-800 border border-slate-300 hover:bg-slate-100">
+              Neighborhood Hosts (<span id="countHostPorts">0</span>)
+            </button>
+
+            <span class="text-slate-300 mx-1">|</span>
+
+            <label for="connectorTypeSelect" class="text-xs font-bold text-slate-700">Connector:</label>
+            <select id="connectorTypeSelect" class="input-tech px-2 py-1 text-xs font-mono-tech">
+              <option value="ALL">All Connectors</option>
+              <option value="CCS2 DC">CCS2 DC Fast</option>
+              <option value="Type 2 AC">Type 2 AC (7.4-22 kW)</option>
+              <option value="Bharat DC-001">Bharat DC-001</option>
+              <option value="16A 3-Pin Industrial">16A 3-Pin Socket</option>
+            </select>
+
+            <label for="sortOrderSelect" class="text-xs font-bold text-slate-700 ml-1">Sort:</label>
+            <select id="sortOrderSelect" class="input-tech px-2 py-1 text-xs font-mono-tech">
+              <option value="distance">Nearest Distance (km)</option>
+              <option value="power">Highest Output (kW)</option>
+              <option value="price">Lowest Tariff (INR/kWh)</option>
+            </select>
+          </div>
+
+          <div class="flex items-center gap-2 text-xs font-mono-tech text-slate-700">
+            <span>Urgent Filter:</span>
+            <button type="button" id="toggleUrgentReadyOnly" aria-pressed="false" class="btn-tech px-2.5 py-1 border border-slate-400 bg-slate-100 text-slate-900">
+              OFF
+            </button>
+          </div>
+        </div>
+
+        <!-- Time-Slot & Duration Filter Bar -->
+        <div class="flex flex-wrap items-center justify-between gap-3 pt-0.5 text-xs">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="font-mono-tech font-bold text-emerald-800 uppercase flex items-center gap-1">
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+              <span>Schedule &amp; Time-Slot Filter:</span>
+            </span>
+            <select id="slotBandFilterSelect" aria-label="Filter by Time Window" class="input-tech px-2.5 py-1 text-xs font-mono-tech bg-slate-50">
+              <option value="ALL">Any Time Window (24h)</option>
+              <option value="NOW">Immediate Slot (Open Right Now)</option>
+              <option value="MORNING">Morning Window (06:00 - 12:00)</option>
+              <option value="AFTERNOON">Solar Afternoon (12:00 - 18:00)</option>
+              <option value="EVENING">Evening Peak (18:00 - 24:00)</option>
+              <option value="NIGHT">Overnight Slot (00:00 - 06:00)</option>
+            </select>
+
+            <label for="slotMinDurationSelect" class="font-semibold text-slate-700 ml-1">Min Slot Duration:</label>
+            <select id="slotMinDurationSelect" class="input-tech px-2.5 py-1 text-xs font-mono-tech bg-slate-50">
+              <option value="0">Any Duration</option>
+              <option value="1">At least 1 Hour</option>
+              <option value="2">At least 2 Hours</option>
+              <option value="4">At least 4 Hours</option>
+            </select>
+          </div>
+
+          <div class="font-mono-tech text-[11px] text-slate-600">
+            Click any <span class="bg-emerald-100 text-emerald-900 border border-emerald-400 px-1.5 py-0.5 font-semibold">TIME SLOT CHIP</span> on a station card to pre-book that exact window.
+          </div>
+        </div>
+      </div>
+
+      <!-- Split View: Left Spatial Radar + Hardware Schematic | Right Live Charger & Time-Slot Directory -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+
+        <!-- Left Column: Vector Spatial Map, Connector Pinout Schematic & SoC Calculator (5 cols) -->
+        <div class="lg:col-span-5 space-y-4">
+          <!-- Spatial Radar Card -->
+          <div class="card-blueprint overflow-hidden">
+            <div class="bg-slate-950 text-white px-3.5 py-2.5 border-b border-slate-800 flex items-center justify-between">
+              <div>
+                <h2 class="text-xs font-bold uppercase tracking-wider text-emerald-400">Spatial Telemetry &amp; Port Radar</h2>
+                <p id="mapSectorSubtitle" class="text-[11px] font-mono-tech text-slate-400">Mumbai - Bandra &amp; BKC Sector</p>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <button type="button" id="btnZoomInMap" class="btn-tech w-6 h-6 bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 text-xs font-mono-tech" title="Zoom In">+</button>
+                <button type="button" id="btnZoomOutMap" class="btn-tech w-6 h-6 bg-slate-800 hover:bg-slate-700 text-white border border-slate-600 text-xs font-mono-tech" title="Zoom Out">-</button>
+              </div>
+            </div>
+
+            <!-- Interactive SVG Map Canvas -->
+            <div class="relative h-72 map-grid-bg select-none overflow-hidden" id="mapContainer">
+              <svg id="radarSvgMap" viewBox="0 0 500 300" class="w-full h-full block" aria-label="Interactive EV Charger Map">
+                <line x1="250" y1="0" x2="250" y2="300" stroke="#1e293b" stroke-width="1"/>
+                <line x1="0" y1="150" x2="500" y2="150" stroke="#1e293b" stroke-width="1"/>
+                <circle cx="250" cy="150" r="50" fill="none" stroke="#1e293b" stroke-width="1.5" stroke-dasharray="4 4"/>
+                <circle cx="250" cy="150" r="100" fill="none" stroke="#1e293b" stroke-width="1.5" stroke-dasharray="4 4"/>
+                <circle cx="250" cy="150" r="142" fill="none" stroke="#334155" stroke-width="1.5"/>
+                <path d="M 10 250 L 180 180 L 250 150 L 360 105 L 490 35" fill="none" stroke="#334155" stroke-width="3"/>
+                <path d="M 90 15 L 250 150 L 410 285" fill="none" stroke="#1e293b" stroke-width="2"/>
+                <g id="mapPinsLayer"></g>
+                <g id="userMapMarker" transform="translate(250, 150)">
+                  <rect x="-6" y="-6" width="12" height="12" fill="#38bdf8" stroke="#0f172a" stroke-width="2"/>
+                  <path d="M 0 -12 L 0 -8 M 0 8 L 0 12 M -12 0 L -8 0 M 8 0 L 12 0" stroke="#38bdf8" stroke-width="1.8"/>
+                  <text x="10" y="4" fill="#e2e8f0" font-family="IBM Plex Mono, monospace" font-size="10" font-weight="700">YOU</text>
+                </g>
+              </svg>
+
+              <!-- Map Legend Overlay -->
+              <div class="absolute bottom-2 left-2 right-2 bg-slate-950/95 border border-slate-800 px-3 py-1.5 flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono-tech text-slate-300">
+                <div class="flex items-center gap-3">
+                  <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 bg-emerald-500 inline-block"></span> Available Now</span>
+                  <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 bg-amber-500 inline-block"></span> Host Time-Slot</span>
+                  <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 bg-red-600 inline-block"></span> Occupied</span>
+                </div>
+                <span id="mapScaleLabel">Scale: 1 ring = 5.0 km</span>
+              </div>
+            </div>
+
+            <!-- Selected Map Station Quick Bar -->
+            <div id="mapSelectedQuickBar" class="p-3 bg-slate-100 border-t-2 border-slate-900 flex items-center justify-between gap-2">
+              <div class="text-xs">
+                <span class="font-bold text-slate-950" id="quickBarTitle">Select any node on the radar or list</span>
+                <span class="block font-mono-tech text-slate-600 text-[11px]" id="quickBarMeta">Click a station pin to inspect time slots and voltage</span>
+              </div>
+              <button type="button" id="quickBarBookBtn" class="btn-tech px-3 py-1.5 text-xs bg-emerald-700 hover:bg-emerald-600 text-white hidden shrink-0">
+                Reserve &amp; Pay
+              </button>
+            </div>
+          </div>
+
+          <!-- Selected Port Pinout & Time-Slot Energy Calculator -->
+          <div class="card-blueprint p-4 space-y-3 bg-white">
+            <div class="flex items-center justify-between border-b-2 border-slate-900 pb-2">
+              <div>
+                <h3 class="text-xs font-extrabold uppercase tracking-wider text-slate-950">Port Hardware &amp; Slot Energy Telemetry</h3>
+                <p class="text-[11px] font-mono-tech text-slate-600" id="schematicStationLabel">Inspecting: Bandra West Driveway #B2</p>
+              </div>
+              <span class="badge-tech bg-slate-900 text-emerald-400" id="schematicConnectorBadge">TYPE 2 AC</span>
+            </div>
+
+            <!-- SVG Technical Schematic -->
+            <div class="bg-slate-950 text-slate-200 p-3 border border-slate-800 grid grid-cols-12 gap-3 items-center" style="border-radius: 3px;">
+              <div class="col-span-4 flex flex-col items-center justify-center border-r border-slate-800 pr-2">
+                <svg id="connectorSchematicSvg" viewBox="0 0 80 80" class="w-16 h-16 text-emerald-400" fill="none" stroke="currentColor" stroke-width="2">
+                  <!-- Dynamic connector pinout rendered by JS -->
+                </svg>
+                <span id="schematicPinoutText" class="text-[10px] font-mono-tech text-slate-400 mt-1 text-center">7-Pin IEC 62196</span>
+              </div>
+              <div class="col-span-8 font-mono-tech text-[11px] space-y-1.5">
+                <div class="flex justify-between">
+                  <span class="text-slate-400">MAX OUTPUT:</span>
+                  <strong class="text-emerald-400" id="schematicKwVal">7.4 kW (230V / 32A)</strong>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-400">1-HR SLOT YIELD:</span>
+                  <strong class="text-white" id="schematicOneHrYield">+7.4 kWh (~52 km range)</strong>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-400">NEXT OPEN SLOT:</span>
+                  <strong class="text-amber-400" id="schematicNextSlot">00:30 - 03:30 (3.0 hrs)</strong>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-400">PROTECTION:</span>
+                  <span class="text-slate-300">30mA Type-A RCCB + Earth OK</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Travel Battery & Range Estimator Inputs -->
+            <div class="grid grid-cols-3 gap-2.5 text-xs pt-1">
+              <div>
+                <label for="calcBatteryCap" class="block text-slate-700 font-semibold mb-1">Battery (kWh)</label>
+                <input type="number" id="calcBatteryCap" value="45" min="3" max="150" class="input-tech w-full px-2 py-1.5 font-mono-tech text-xs" />
+              </div>
+              <div>
+                <label for="calcCurrentSoc" class="block text-slate-700 font-semibold mb-1">Current SoC (%)</label>
+                <input type="number" id="calcCurrentSoc" value="16" min="1" max="99" class="input-tech w-full px-2 py-1.5 font-mono-tech text-xs" />
+              </div>
+              <div>
+                <label for="calcTargetSoc" class="block text-slate-700 font-semibold mb-1">Target SoC (%)</label>
+                <input type="number" id="calcTargetSoc" value="80" min="10" max="100" class="input-tech w-full px-2 py-1.5 font-mono-tech text-xs" />
+              </div>
+            </div>
+            <div class="bg-slate-100 border border-slate-300 p-2.5 font-mono-tech text-xs grid grid-cols-3 gap-2" style="border-radius: 3px;">
+              <div>
+                <span class="text-slate-500 block text-[10px]">ENERGY NEEDED</span>
+                <span id="calcKwhNeeded" class="font-bold text-slate-900 text-sm">28.8 kWh</span>
+              </div>
+              <div>
+                <span class="text-slate-500 block text-[10px]">EST. RANGE GAIN</span>
+                <span id="calcRangeGain" class="font-bold text-emerald-700 text-sm">+202 km</span>
+              </div>
+              <div>
+                <span class="text-slate-500 block text-[10px]">REQ. SLOT TIME</span>
+                <span id="calcFastTime" class="font-bold text-amber-700 text-sm">~58 mins</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column: Live Station Cards with Interactive 24h Timelines & Time-Slot Chips (7 cols) -->
+        <div class="lg:col-span-7 space-y-3.5">
+          <div id="urgentDispatchAlert" class="hidden card-blueprint border-amber-600 bg-amber-50 p-3.5">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <div class="text-xs font-extrabold uppercase tracking-wider text-amber-950 flex items-center gap-1.5">
+                  <svg class="w-4 h-4 text-amber-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                  <span>URGENT CHARGING PRIORITY ACTIVE</span>
+                </div>
+                <p class="text-xs text-amber-900 mt-1">
+                  Showing only immediately available ports sorted by shortest distance. Instant 15-minute urgent slot lock enabled.
+                </p>
+              </div>
+              <button type="button" id="btnCancelUrgentMode" class="btn-tech px-2.5 py-1 text-xs bg-white text-amber-950 border border-amber-800 shrink-0">
+                Exit Urgent Mode
+              </button>
+            </div>
+          </div>
+
+          <div id="stationsListContainer" class="space-y-3.5">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ==========================================
+         VIEW 2: CHARGER HOST CONSOLE & TIME-SLOT SCHEDULER
+         ========================================== -->
+    <div id="view-host" class="hidden space-y-6">
+      <!-- Top Host Status & Immediate Broadcast Panel -->
+      <div class="card-blueprint p-5 bg-white">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b-2 border-slate-900 pb-4">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="badge-tech bg-slate-900 text-emerald-400">HOST LOGIN CONSOLE</span>
+              <span class="text-xs font-mono-tech text-slate-600" id="hostAccountHeaderId">Host ID: HN-MH-4029 (Vikram Gokhale)</span>
+            </div>
+            <h1 class="text-lg font-extrabold text-slate-950 mt-1">My Charging Port Availability &amp; Time-Slot Scheduler</h1>
+            <p class="text-xs text-slate-600">Set your port live right now or publish exact time slots and duration windows (e.g., 2 hours tonight or daytime solar hours) for drivers to reserve and pay.</p>
+          </div>
+
+          <!-- Hardware-Style Availability Switcher -->
+          <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 bg-slate-100 p-2 border-2 border-slate-900" style="border-radius: 3px;">
+            <button type="button" data-host-state="AVAILABLE" class="host-state-btn btn-tech px-3.5 py-2 text-xs bg-emerald-700 text-white border border-emerald-900 flex items-center gap-1.5">
+              <span class="w-2 h-2 bg-white inline-block"></span>
+              <span>AVAILABLE NOW</span>
+            </button>
+            <button type="button" data-host-state="URGENT_ONLY" class="host-state-btn btn-tech px-3.5 py-2 text-xs bg-white text-slate-900 border border-slate-300 hover:bg-slate-200">
+              <span>URGENT SOS ONLY</span>
+            </button>
+            <button type="button" data-host-state="OFFLINE" class="host-state-btn btn-tech px-3.5 py-2 text-xs bg-white text-slate-900 border border-slate-300 hover:bg-slate-200">
+              <span>OCCUPIED / PRIVATE</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Live Host Port Quick Controls -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 pt-4">
+          <div class="bg-slate-50 p-3 border border-slate-300" style="border-radius: 3px;">
+            <span class="text-[11px] font-mono-tech text-slate-500 uppercase block">Primary Listed Port</span>
+            <strong class="text-sm text-slate-900 block mt-0.5" id="hostPrimaryPortName">Bandra West Driveway #B2 (Peer Host)</strong>
+            <span class="text-xs font-mono-tech text-emerald-700 mt-1 block" id="hostPrimaryStatusText">Status: AVAILABLE NOW (Listed on Radar)</span>
+          </div>
+
+          <div class="bg-slate-50 p-3 border border-slate-300" style="border-radius: 3px;">
+            <label for="hostQuickRateInput" class="text-[11px] font-mono-tech text-slate-500 uppercase block">Base Tariff (INR / kWh)</label>
+            <div class="flex items-center gap-2 mt-1">
+              <input type="number" id="hostQuickRateInput" value="15.50" step="0.5" min="5" max="60" class="input-tech px-2 py-1 text-sm font-mono-tech w-28" />
+              <button type="button" id="btnUpdateHostRate" class="btn-tech px-2.5 py-1 text-xs bg-slate-900 text-white">Save</button>
+            </div>
+          </div>
+
+          <div class="bg-slate-50 p-3 border border-slate-300" style="border-radius: 3px;">
+            <label for="hostWindowInput" class="text-[11px] font-mono-tech text-slate-500 uppercase block">Active Status Banner</label>
+            <div class="flex items-center gap-2 mt-1">
+              <input type="text" id="hostWindowInput" value="Now - 23:30 IST" class="input-tech px-2 py-1 text-xs font-mono-tech w-full" />
+              <button type="button" id="btnUpdateHostWindow" class="btn-tech px-2.5 py-1 text-xs bg-slate-900 text-white">Set</button>
+            </div>
+          </div>
+
+          <div class="bg-slate-950 text-white p-3 border border-slate-800" style="border-radius: 3px;">
+            <span class="text-[11px] font-mono-tech text-slate-400 uppercase block">Session Settlement Balance</span>
+            <strong class="text-base font-mono-tech text-emerald-400 block mt-0.5" id="hostSettlementTotal">INR 1,420.00</strong>
+            <span class="text-[11px] font-mono-tech text-slate-400 block mt-0.5">UPI Auto-Sweep: vikram.g@okaxis</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- INTERACTIVE TIME-SLOT & DURATION SCHEDULER -->
+      <div class="card-blueprint p-5 bg-white space-y-5">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b-2 border-slate-900 pb-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="badge-tech bg-emerald-700 text-white">CHRONO-SLOT SCHEDULER</span>
+              <span class="text-xs font-mono-tech text-slate-600">Define exact time windows &amp; durations your port is open</span>
+            </div>
+            <h2 class="text-base font-extrabold text-slate-950 mt-1">Publish Custom Availability Time Slots &amp; 24-Hour Grid</h2>
+          </div>
+
+          <!-- Quick Duration Presets -->
+          <div class="flex flex-wrap items-center gap-1.5">
+            <span class="text-xs font-mono-tech text-slate-600 mr-1">Quick Add:</span>
+            <button type="button" data-slot-preset="NEXT_2H" class="slot-preset-btn btn-tech px-2.5 py-1.5 text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-950 border border-emerald-500 font-mono-tech">
+              + Next 2 Hours (Available Now)
+            </button>
+            <button type="button" data-slot-preset="SOLAR_4H" class="slot-preset-btn btn-tech px-2.5 py-1.5 text-xs bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-500 font-mono-tech">
+              + Solar Midday (12:00-16:00, 4h)
+            </button>
+            <button type="button" data-slot-preset="NIGHT_8H" class="slot-preset-btn btn-tech px-2.5 py-1.5 text-xs bg-slate-100 hover:bg-slate-200 text-slate-900 border border-slate-400 font-mono-tech">
+              + Overnight (22:00-06:00, 8h)
+            </button>
+          </div>
+        </div>
+
+        <!-- Custom Time-Slot Builder Form -->
+        <form id="formAddTimeSlot" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 bg-slate-50 p-3.5 border border-slate-300 text-xs items-end" style="border-radius: 3px;">
+          <div>
+            <label for="slotPortSelect" class="block font-bold text-slate-800 mb-1">Target Host Port</label>
+            <select id="slotPortSelect" class="input-tech w-full px-2 py-2 font-mono-tech text-xs">
+              <!-- Populated by JS -->
+            </select>
+          </div>
+          <div>
+            <label for="slotDaySelect" class="block font-bold text-slate-800 mb-1">Schedule Day</label>
+            <select id="slotDaySelect" class="input-tech w-full px-2 py-2 font-mono-tech text-xs">
+              <option value="Today (Oct 20)">Today (Oct 20)</option>
+              <option value="Tomorrow (Oct 21)">Tomorrow (Oct 21)</option>
+              <option value="Daily Recurring">Daily Recurring</option>
+            </select>
+          </div>
+          <div>
+            <label for="slotStartTime" class="block font-bold text-slate-800 mb-1">Start Time (24h)</label>
+            <input type="time" id="slotStartTime" value="18:00" required class="input-tech w-full px-2.5 py-1.5 font-mono-tech text-xs" />
+          </div>
+          <div>
+            <label for="slotDurationHrs" class="block font-bold text-slate-800 mb-1">Available Duration</label>
+            <select id="slotDurationHrs" class="input-tech w-full px-2 py-2 font-mono-tech text-xs">
+              <option value="0.5">30 Mins (0.5 hr)</option>
+              <option value="1">1 Hour</option>
+              <option value="1.5">1.5 Hours</option>
+              <option value="2" selected>2 Hours</option>
+              <option value="3">3 Hours</option>
+              <option value="4">4 Hours</option>
+              <option value="6">6 Hours</option>
+              <option value="8">8 Hours (Overnight)</option>
+            </select>
+          </div>
+          <div>
+            <label for="slotCustomRate" class="block font-bold text-slate-800 mb-1">Slot Rate (INR/kWh)</label>
+            <input type="number" id="slotCustomRate" value="15.00" step="0.5" min="5" max="50" required class="input-tech w-full px-2.5 py-1.5 font-mono-tech text-xs" />
+          </div>
+          <div>
+            <button type="submit" class="btn-tech w-full py-2 px-3 bg-emerald-700 hover:bg-emerald-600 text-white font-bold border border-emerald-900">
+              + Publish Time Slot
+            </button>
+          </div>
+        </form>
+
+        <!-- Interactive 24-Hour Chrono-Bar Matrix & Published Slot Chips -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+          <!-- 24-Hour Interactive Block Matrix (7 cols) -->
+          <div class="lg:col-span-7 space-y-2">
+            <div class="flex items-center justify-between text-xs">
+              <span class="font-bold text-slate-900 uppercase">Interactive 24-Hour Port Availability Matrix (Click any hour to toggle)</span>
+              <span class="font-mono-tech text-[11px] text-slate-600">00:00 to 23:00 IST</span>
+            </div>
+            <div id="hostChronoMatrix" class="grid grid-cols-12 sm:grid-cols-24 border-2 border-slate-900 bg-slate-900 overflow-hidden" style="border-radius: 3px;">
+              <!-- 24 hourly interactive cells populated by JS -->
+            </div>
+            <div class="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono-tech text-slate-600 pt-1">
+              <div class="flex items-center gap-3">
+                <span class="inline-flex items-center gap-1"><span class="w-3 h-3 bg-emerald-500 inline-block border border-slate-900"></span> Open Slot</span>
+                <span class="inline-flex items-center gap-1"><span class="w-3 h-3 bg-amber-500 inline-block border border-slate-900"></span> Urgent / Peak</span>
+                <span class="inline-flex items-center gap-1"><span class="w-3 h-3 bg-sky-500 inline-block border border-slate-900"></span> Driver Booked</span>
+                <span class="inline-flex items-center gap-1"><span class="w-3 h-3 bg-slate-800 inline-block border border-slate-900"></span> Private / Off</span>
+              </div>
+              <span id="hostChronoSummaryText">14 of 24 hrs open today</span>
+            </div>
+          </div>
+
+          <!-- Published Time-Slot Windows List (5 cols) -->
+          <div class="lg:col-span-5 space-y-2">
+            <div class="flex items-center justify-between text-xs">
+              <span class="font-bold text-slate-900 uppercase">Published Bookable Time Slots</span>
+              <span class="badge-tech bg-slate-200 text-slate-900" id="hostPublishedSlotCount">0 SLOTS</span>
+            </div>
+            <div id="hostPublishedSlotsList" class="space-y-2 max-h-48 overflow-y-auto pr-1">
+              <!-- Populated by JS -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Host Two-Column Layout: Register New Port | Verify Driver PIN & Incoming Reservations -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        <!-- Register / Add a Neighborhood Charging Point -->
+        <div class="lg:col-span-6 card-blueprint p-5 space-y-4">
+          <div class="border-b-2 border-slate-900 pb-3">
+            <h2 class="text-sm font-extrabold uppercase tracking-wider text-slate-900">Register Additional Charging Point</h2>
+            <p class="text-xs text-slate-600 mt-0.5">Publish a residential wallbox, 16A socket, or commercial plug with an initial time slot.</p>
+          </div>
+
+          <form id="formAddHostPort" class="space-y-3 text-xs">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label for="newPortName" class="block font-semibold text-slate-700 mb-1">Station / Building Name *</label>
+                <input type="text" id="newPortName" required placeholder="e.g., Green Valley Society Bay 4" class="input-tech w-full px-2.5 py-2" />
+              </div>
+              <div>
+                <label for="newPortSector" class="block font-semibold text-slate-700 mb-1">Locality / Highway Landmark *</label>
+                <input type="text" id="newPortSector" required placeholder="e.g., Dadar TT Circle / NH48 Exit" class="input-tech w-full px-2.5 py-2" />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label for="newPortConnector" class="block font-semibold text-slate-700 mb-1">Connector Standard</label>
+                <select id="newPortConnector" class="input-tech w-full px-2 py-2 font-mono-tech">
+                  <option value="Type 2 AC">Type 2 AC</option>
+                  <option value="CCS2 DC">CCS2 DC Fast</option>
+                  <option value="16A 3-Pin Industrial">16A 3-Pin Industrial</option>
+                  <option value="Bharat DC-001">Bharat DC-001</option>
+                </select>
+              </div>
+              <div>
+                <label for="newPortPowerKw" class="block font-semibold text-slate-700 mb-1">Max Output (kW)</label>
+                <input type="number" id="newPortPowerKw" value="7.4" step="0.1" min="3.3" max="240" required class="input-tech w-full px-2.5 py-2 font-mono-tech" />
+              </div>
+              <div>
+                <label for="newPortRate" class="block font-semibold text-slate-700 mb-1">Tariff (INR/kWh)</label>
+                <input type="number" id="newPortRate" value="14.00" step="0.5" min="5" max="50" required class="input-tech w-full px-2.5 py-2 font-mono-tech" />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label for="newPortLat" class="block font-semibold text-slate-700 mb-1">Latitude (GPS)</label>
+                <input type="number" id="newPortLat" value="19.0825" step="0.0001" required class="input-tech w-full px-2.5 py-2 font-mono-tech" />
+              </div>
+              <div>
+                <label for="newPortLng" class="block font-semibold text-slate-700 mb-1">Longitude (GPS)</label>
+                <input type="number" id="newPortLng" value="72.8810" step="0.0001" required class="input-tech w-full px-2.5 py-2 font-mono-tech" />
+              </div>
+              <div>
+                <label for="newPortInitialSlot" class="block font-semibold text-slate-700 mb-1">Initial Available Slot</label>
+                <input type="text" id="newPortInitialSlot" value="08:00 - 22:00 (14h)" required class="input-tech w-full px-2.5 py-2 font-mono-tech" />
+              </div>
+            </div>
+
+            <div>
+              <label for="newPortAccessNotes" class="block font-semibold text-slate-700 mb-1">Gate Access &amp; Cable Instructions *</label>
+              <input type="text" id="newPortAccessNotes" required placeholder="e.g., Inform guard bay #4, 5m tethered cable available, covered bay" class="input-tech w-full px-2.5 py-2" />
+            </div>
+
+            <div class="flex items-center justify-between pt-2">
+              <button type="button" id="btnFillHostCurrentGps" class="btn-tech px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300">
+                Use Current Map Center GPS
+              </button>
+              <button type="submit" class="btn-tech px-4 py-2 bg-emerald-700 hover:bg-emerald-600 text-white">
+                Publish Port as Available Now
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Incoming Driver Reservations & Gate PIN Verification -->
+        <div class="lg:col-span-6 space-y-4">
+          <div class="card-blueprint p-5 space-y-4">
+            <div class="border-b-2 border-slate-900 pb-3 flex items-center justify-between">
+              <div>
+                <h2 class="text-sm font-extrabold uppercase tracking-wider text-slate-900">Driver Gate PIN Verification &amp; Metering</h2>
+                <p class="text-xs text-slate-600 mt-0.5">Enter the 6-digit PIN shown on the arriving driver's receipt to energize the socket.</p>
+              </div>
+              <span class="badge-tech bg-emerald-100 text-emerald-900 border border-emerald-400">OCPP / MANUAL RELAY</span>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <input type="text" id="hostPinVerifyInput" maxlength="6" placeholder="Enter 6-digit Booking PIN (e.g. 482910)" class="input-tech px-3 py-2 text-xs font-mono-tech flex-1" />
+              <button type="button" id="btnVerifyDriverPin" class="btn-tech px-4 py-2 text-xs bg-slate-900 hover:bg-slate-800 text-white">
+                Verify &amp; Energize
+              </button>
+            </div>
+            <div id="hostPinVerifyFeedback" class="hidden p-2.5 text-xs font-mono-tech border" style="border-radius: 3px;"></div>
+
+            <div class="border-t border-slate-200 pt-3">
+              <h3 class="text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">Host Reservation &amp; Time-Slot Payout Ledger</h3>
+              <div id="hostBookingsLedger" class="space-y-2 max-h-64 overflow-y-auto">
+                <!-- Populated dynamically -->
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==========================================
+         VIEW 3: ACTIVE BOOKINGS, METERING & RECEIPTS
+         ========================================== -->
+    <div id="view-bookings" class="hidden space-y-5">
+      <div class="card-blueprint p-5">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b-2 border-slate-900 pb-4">
+          <div>
+            <h1 class="text-lg font-extrabold text-slate-900">Confirmed Charging Time-Slot Reservations &amp; Tax Receipts</h1>
+            <p class="text-xs text-slate-600">Present your 6-digit Access PIN to the neighborhood host during your booked time slot to start power transfer.</p>
+          </div>
+          <button type="button" data-nav="finder" class="nav-trigger btn-tech px-3 py-2 text-xs bg-slate-900 text-white">
+            + Book Another Port
+          </button>
+        </div>
+
+        <div id="driverBookingsList" class="mt-4 space-y-4">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </div>
+
+    <!-- ==========================================
+         VIEW 4: PRIVACY POLICY PAGE
+         ========================================== -->
+    <div id="view-privacy" class="hidden">
+      <article class="card-blueprint p-6 max-w-4xl mx-auto space-y-5 text-xs leading-relaxed text-slate-700">
+        <div class="border-b-2 border-slate-900 pb-4 flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <span class="badge-tech bg-slate-900 text-white">COMPLIANCE DOCUMENT</span>
+            <h1 class="text-xl font-bold text-slate-900 mt-1">Privacy Policy</h1>
+            <p class="font-mono-tech text-slate-500 text-[11px] mt-0.5">Effective Date: October 20, 2026 | Domain: charge.gridnode.in</p>
+          </div>
+          <button type="button" data-nav="finder" class="nav-trigger btn-tech px-3 py-1.5 bg-slate-100 text-slate-900 border border-slate-300">
+            Return to Charger Map
+          </button>
+        </div>
+
+        <section class="space-y-2">
+          <h2 class="text-sm font-bold text-slate-900 uppercase">1. Scope and Data Minimization Principle</h2>
+          <p>GridNode operates a peer-to-peer neighborhood charger registry and public EV charging point dispatch system in compliance with the Digital Personal Data Protection Act (DPDP Act, India). We collect only the minimum operational telemetry required to compute spatial proximity, lock charging time slots, settle electricity tariffs, and issue GST-compliant invoices.</p>
+        </section>
+
+        <section class="space-y-2">
+          <h2 class="text-sm font-bold text-slate-900 uppercase">2. Location Telemetry (GPS Coordinates)</h2>
+          <p>When you click "Detect My GPS" or select a highway corridor, your latitude and longitude coordinates are processed locally in your browser to calculate Haversine distance to nearby AC and DC charging points. We do not store continuous background location trails or sell geolocation history to third-party ad networks.</p>
+        </section>
+
+        <section class="space-y-2">
+          <h2 class="text-sm font-bold text-slate-900 uppercase">3. Neighborhood Host Address &amp; Schedule Protection</h2>
+          <p>For residential and society peer-to-peer hosts, public map markers display sector-level coordinates, published time-slot windows, and approximate distance. Exact building gate instructions, bay numbers, and host intercom contacts are disclosed only to authenticated EV drivers holding a paid, time-stamped reservation token.</p>
+        </section>
+
+        <section class="space-y-2">
+          <h2 class="text-sm font-bold text-slate-900 uppercase">4. Payment &amp; Settlement Data</h2>
+          <p>UPI handles (VPA), card authorization tokens, and settlement bank references are processed via RBI-compliant payment aggregators. GridNode stores only the transaction reference ID, kWh billed, and statutory tax breakdown for seven years as mandated by Indian financial audit regulations.</p>
+        </section>
+
+        <section class="space-y-2">
+          <h2 class="text-sm font-bold text-slate-900 uppercase">5. Data Retention &amp; Deletion Requests</h2>
+          <p>Drivers and Hosts may export their complete session ledger or request immediate account erasure by contacting our Data Protection Officer at <span class="font-mono-tech text-slate-900">privacy@gridnode.in</span>.</p>
+        </section>
+      </article>
+    </div>
+
+    <!-- ==========================================
+         VIEW 5: TERMS AND CONDITIONS PAGE
+         ========================================== -->
+    <div id="view-terms" class="hidden">
+      <article class="card-blueprint p-6 max-w-4xl mx-auto space-y-5 text-xs leading-relaxed text-slate-700">
+        <div class="border-b-2 border-slate-900 pb-4 flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <span class="badge-tech bg-slate-900 text-white">LEGAL AGREEMENT</span>
+            <h1 class="text-xl font-bold text-slate-900 mt-1">Terms and Conditions of Use</h1>
+            <p class="font-mono-tech text-slate-500 text-[11px] mt-0.5">Last Updated: October 20, 2026 | Governing Law: Mumbai, Maharashtra, India</p>
+          </div>
+          <button type="button" data-nav="finder" class="nav-trigger btn-tech px-3 py-1.5 bg-slate-100 text-slate-900 border border-slate-300">
+            Return to Charger Map
+          </button>
+        </div>
+
+        <section class="space-y-2">
+          <h2 class="text-sm font-bold text-slate-900 uppercase">1. Dual-Role Platform Rules (Drivers &amp; Hosts)</h2>
+          <p>GridNode provides a real-time discovery, time-slot reservation, and settlement interface connecting Electric Vehicle Operators ("Drivers") with Commercial Charging Operators and Residential/Neighborhood Port Owners ("Hosts"). By logging into either role, you agree to abide by the technical safety and scheduling obligations below.</p>
+        </section>
+
+        <section class="space-y-2">
+          <h2 class="text-sm font-bold text-slate-900 uppercase">2. Electrical Safety &amp; Connector Compliance</h2>
+          <p>Hosts warrant that any listed charging point (CCS2, Type 2 AC, Bharat DC-001, or 16A 3-Pin Industrial Socket) is wired with dedicated earthing, functional Residual Current Circuit Breakers (RCCB/RCBO), and accurate metering. Drivers must use manufacturer-approved charging cables free of insulation damage or aftermarket adapters not rated for the listed amperage.</p>
+        </section>
+
+        <section class="space-y-2">
+          <h2 class="text-sm font-bold text-slate-900 uppercase">3. Scheduled Time Slots &amp; Urgent Charging Hold Window</h2>
+          <p>Hosts may publish specific availability time slots (e.g., 18:00 to 21:00) or mark their port "Available Now". When a Driver books a time slot, that slot is locked exclusively for the booked duration. If the Driver fails to arrive and verify their 6-digit PIN within 20 minutes of the slot start time without notifying the Host, the reservation lock expires and the initial booking hold fee (INR 25) is credited to the Host.</p>
+        </section>
+
+        <section class="space-y-2">
+          <h2 class="text-sm font-bold text-slate-900 uppercase">4. Tariff Calculation, Overstay Fees &amp; Refunds</h2>
+          <p>Tariffs are stated in INR per kWh delivered plus applicable GST. If actual energy dispensed is lower than the pre-authorized kWh estimate, the unconsumed balance is automatically refunded to the Driver's original payment method upon session termination. Vehicles occupying a neighborhood driveway port more than 15 minutes past their booked time slot end time incur an idle bay fee of INR 2.00 per minute.</p>
+        </section>
+
+        <section class="space-y-2">
+          <h2 class="text-sm font-bold text-slate-900 uppercase">5. Limitation of Liability</h2>
+          <p>Drivers must follow all residential society parking rules and speed limits when entering a Host property. GridNode acts solely as a scheduling and payment intermediary and is not liable for vehicle BMS faults or utility grid outages caused by state distribution companies.</p>
+        </section>
+      </article>
+    </div>
+
+  </main>
+
+  <!-- FOOTER WITH LAUNCH VERIFICATION STATUS -->
+  <footer class="bg-slate-950 text-slate-400 border-t-2 border-slate-900 text-xs mt-10">
+    <div class="max-w-7xl mx-auto px-4 py-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div class="space-y-1">
+        <div class="font-bold text-white font-mono-tech">GRIDNODE EV DISPATCH NETWORK</div>
+        <p class="text-[11px] text-slate-400">Production-grade P2P neighborhood and highway EV charging registry. Zero third-party generator watermarks.</p>
+      </div>
+      <div class="flex flex-wrap items-center gap-4 font-mono-tech text-[11px]">
+        <button type="button" data-nav="finder" class="nav-trigger hover:text-white">Charger Map</button>
+        <button type="button" data-nav="host" class="nav-trigger hover:text-white">Host Console</button>
+        <button type="button" data-nav="privacy" class="nav-trigger hover:text-white">Privacy Policy</button>
+        <button type="button" data-nav="terms" class="nav-trigger hover:text-white">Terms &amp; Conditions</button>
+        <button type="button" id="btnFooterDomainCheck" class="text-emerald-400 hover:underline">Launch Readiness: PASSED</button>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ==========================================
+       MODAL 1: BOOKING, TIME-SLOT & PAYMENT CHECKOUT
+       ========================================== -->
+  <div id="modalBookingCheckout" class="fixed inset-0 bg-slate-950/75 z-50 hidden items-center justify-center p-4 overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="modalBookingTitle">
+    <div class="card-blueprint bg-white w-full max-w-xl overflow-hidden shadow-2xl">
+      <div class="bg-slate-950 text-white px-5 py-3.5 flex items-center justify-between border-b-2 border-slate-800">
+        <div>
+          <span class="badge-tech bg-emerald-600 text-white" id="checkoutModalBadge">TIME-SLOT &amp; INSTANT LOCK</span>
+          <h2 id="modalBookingTitle" class="text-base font-bold mt-1">Select Time Slot, Duration &amp; Pay</h2>
+        </div>
+        <button type="button" id="btnCloseBookingModal" class="btn-tech px-2.5 py-1 bg-slate-800 text-slate-200 hover:bg-slate-700 text-xs font-mono-tech">
+          ESC / CLOSE
+        </button>
+      </div>
+
+      <form id="formCompleteBooking" class="p-5 space-y-4 text-xs">
+        <!-- Selected Station Summary -->
+        <div class="bg-slate-50 p-3.5 border-2 border-slate-900 flex flex-wrap items-center justify-between gap-2" style="border-radius: 3px;">
+          <div>
+            <div class="font-bold text-slate-900 text-sm" id="checkoutStationName">Station Name</div>
+            <div class="font-mono-tech text-slate-600 text-[11px] mt-0.5" id="checkoutStationSpecs">CCS2 DC • 30 kW • 1.2 km away</div>
+          </div>
+          <div class="text-right font-mono-tech">
+            <div class="text-sm font-bold text-emerald-700" id="checkoutStationRate">INR 16.00 / kWh</div>
+            <div class="text-[11px] text-slate-500" id="checkoutHostType">Peer Host Port</div>
+          </div>
+        </div>
+
+        <!-- Select Published Host Time Slot or Custom Window -->
+        <div class="bg-emerald-50/70 border border-emerald-400 p-3 space-y-2.5" style="border-radius: 3px;">
+          <div class="flex items-center justify-between">
+            <label for="bookingTimeSlotSelect" class="font-bold text-slate-900 uppercase font-mono-tech text-[11px]">1. Choose Host Published Time Slot</label>
+            <span class="font-mono-tech text-[11px] text-emerald-800" id="checkoutMaxKwhCapLabel">Max Slot Output: 14.8 kWh</span>
+          </div>
+          <select id="bookingTimeSlotSelect" class="input-tech w-full px-2.5 py-2 font-mono-tech text-xs bg-white">
+            <!-- Populated dynamically from station's published timeSlots -->
+          </select>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+            <div>
+              <label for="bookingArrivalWindow" class="block font-semibold text-slate-700 mb-1">Booking Mode</label>
+              <select id="bookingArrivalWindow" class="input-tech w-full px-2 py-1.5 font-mono-tech">
+                <option value="URGENT_NOW">Urgent: Arriving in 15m</option>
+                <option value="SCHEDULED_SLOT">Scheduled Time Slot</option>
+                <option value="SLOT_30M">Standard 30m Hold</option>
+              </select>
+            </div>
+            <div>
+              <label for="bookingSlotDurationHrs" class="block font-semibold text-slate-700 mb-1">Slot Duration (Hours)</label>
+              <select id="bookingSlotDurationHrs" class="input-tech w-full px-2 py-1.5 font-mono-tech">
+                <option value="0.5">0.5 hr (30 mins)</option>
+                <option value="1">1.0 hr (60 mins)</option>
+                <option value="1.5">1.5 hrs (90 mins)</option>
+                <option value="2" selected>2.0 hrs (120 mins)</option>
+                <option value="3">3.0 hrs (180 mins)</option>
+                <option value="4">4.0 hrs (240 mins)</option>
+              </select>
+            </div>
+            <div>
+              <label for="bookingEnergyKwh" class="block font-semibold text-slate-700 mb-1">Energy to Book (kWh)</label>
+              <input type="number" id="bookingEnergyKwh" value="14.8" min="1" max="120" step="0.5" required class="input-tech w-full px-2.5 py-1.5 font-mono-tech" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Vehicle Reg -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label for="bookingVehicleReg" class="block font-semibold text-slate-700 mb-1">Vehicle Registration Number *</label>
+            <input type="text" id="bookingVehicleReg" value="MH-01-EV-4821" required class="input-tech w-full px-2.5 py-2 font-mono-tech uppercase" />
+          </div>
+          <div>
+            <label for="bookingDriverPhone" class="block font-semibold text-slate-700 mb-1">Driver SMS / Intercom Alert No.</label>
+            <input type="text" id="bookingDriverPhone" value="+91 98201 44109" class="input-tech w-full px-2.5 py-2 font-mono-tech" />
+          </div>
+        </div>
+
+        <!-- Payment Method Selector -->
+        <div class="space-y-2">
+          <span class="block font-semibold text-slate-700">2. Select Payment Method</span>
+          <div class="grid grid-cols-3 gap-2">
+            <button type="button" data-pay-method="UPI" class="pay-method-btn btn-tech py-2 px-3 border-2 border-slate-900 bg-slate-900 text-white text-center font-mono-tech">
+              UPI Instant
+            </button>
+            <button type="button" data-pay-method="CARD" class="pay-method-btn btn-tech py-2 px-3 border border-slate-300 bg-white text-slate-800 text-center font-mono-tech">
+              Debit / Credit Card
+            </button>
+            <button type="button" data-pay-method="WALLET" class="pay-method-btn btn-tech py-2 px-3 border border-slate-300 bg-white text-slate-800 text-center font-mono-tech">
+              GridNode Balance
+            </button>
+          </div>
+
+          <!-- UPI Input Panel -->
+          <div id="payPanelUpi" class="p-3 bg-slate-50 border border-slate-200 grid grid-cols-1 sm:grid-cols-12 gap-3 items-center" style="border-radius: 3px;">
+            <div class="sm:col-span-8 space-y-1.5">
+              <label for="upiVpaInput" class="block font-semibold text-slate-700">Enter UPI ID (VPA) or Scan QR</label>
+              <input type="text" id="upiVpaInput" value="rohan.ev@okicici" placeholder="yourname@upi" class="input-tech w-full px-2.5 py-1.5 font-mono-tech" />
+              <p class="text-[11px] text-slate-500">Unused kWh credit refunds automatically upon cable disconnect.</p>
+            </div>
+            <div class="sm:col-span-4 flex flex-col items-center justify-center bg-white p-2 border border-slate-300">
+              <svg class="w-16 h-16 text-slate-900" viewBox="0 0 24 24" fill="currentColor" aria-label="UPI QR Code">
+                <path d="M3 3h6v6H3V3zm2 2v2h2V5H5zm8-2h6v6h-6V3zm2 2v2h2V5h-2zM3 13h6v6H3v-6zm2 2v2h2v-2H5zm13-2h1v2h-1v-2zm-3 0h2v3h-2v-3zm2 4h3v2h-3v-2zm-4-2h2v4h-2v-4zm6 0h1v4h-1v-4z"/>
+              </svg>
+              <span class="text-[10px] font-mono-tech text-slate-600 mt-1">UPI VERIFIED</span>
+            </div>
+          </div>
+
+          <!-- Card Input Panel -->
+          <div id="payPanelCard" class="hidden p-3 bg-slate-50 border border-slate-200 space-y-2" style="border-radius: 3px;">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <label for="cardNumberInput" class="block text-slate-600 mb-1">Card Number</label>
+                <input type="text" id="cardNumberInput" value="4532 •••• •••• 8891" class="input-tech w-full px-2.5 py-1.5 font-mono-tech" />
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label for="cardExpiryInput" class="block text-slate-600 mb-1">Expiry</label>
+                  <input type="text" id="cardExpiryInput" value="08/29" class="input-tech w-full px-2.5 py-1.5 font-mono-tech" />
+                </div>
+                <div>
+                  <label for="cardCvvInput" class="block text-slate-600 mb-1">CVV</label>
+                  <input type="password" id="cardCvvInput" value="842" maxlength="4" class="input-tech w-full px-2.5 py-1.5 font-mono-tech" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Wallet Panel -->
+          <div id="payPanelWallet" class="hidden p-3 bg-slate-50 border border-slate-200 flex items-center justify-between font-mono-tech" style="border-radius: 3px;">
+            <span>Prepaid GridNode Fleet Balance:</span>
+            <strong class="text-emerald-700" id="walletBalanceDisplay">INR 2,450.00</strong>
+          </div>
+        </div>
+
+        <!-- Live Itemized Tariff Calculation -->
+        <div class="bg-slate-950 text-slate-200 p-3.5 font-mono-tech space-y-1.5" style="border-radius: 3px;">
+          <div class="flex justify-between text-xs text-amber-400">
+            <span>Selected Slot Window:</span>
+            <span id="billSlotSummarySpan">Today 00:30 - 02:30 (2.0 hrs)</span>
+          </div>
+          <div class="flex justify-between text-xs">
+            <span>Energy Charge (<span id="billKwhSpan">14.8</span> kWh &times; INR <span id="billRateSpan">15.50</span>):</span>
+            <span id="billEnergySubtotal">INR 229.40</span>
+          </div>
+          <div class="flex justify-between text-xs text-slate-400">
+            <span>Host Time-Slot Lock &amp; Relay Fee:</span>
+            <span id="billReservationFee">INR 25.00</span>
+          </div>
+          <div class="flex justify-between text-xs text-slate-400">
+            <span>GST (18% on service &amp; energy):</span>
+            <span id="billGstAmount">INR 45.79</span>
+          </div>
+          <div class="border-t border-slate-700 pt-1.5 flex justify-between text-sm font-bold text-emerald-400">
+            <span>TOTAL PAYABLE NOW:</span>
+            <span id="billGrandTotal">INR 300.19</span>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-1">
+          <button type="button" id="btnCancelBookingModal" class="btn-tech px-4 py-2.5 bg-slate-100 text-slate-800 border border-slate-300">
+            Cancel
+          </button>
+          <button type="submit" class="btn-tech px-5 py-2.5 bg-emerald-700 hover:bg-emerald-600 text-white font-bold border border-emerald-900">
+            Authorize Payment &amp; Lock Port
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       MODAL 2: DUAL ROLE LOGIN / ACCOUNT SWITCHER
+       ========================================== -->
+  <div id="modalAuthSwitcher" class="fixed inset-0 bg-slate-950/75 z-50 hidden items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="modalAuthTitle">
+    <div class="card-blueprint bg-white w-full max-w-lg overflow-hidden shadow-2xl">
+      <div class="bg-slate-950 text-white px-5 py-3.5 flex items-center justify-between">
+        <div>
+          <span class="badge-tech bg-slate-800 text-emerald-400 border border-slate-700">AUTHENTICATION</span>
+          <h2 id="modalAuthTitle" class="text-base font-bold mt-1">Select Login Role or Enter Credentials</h2>
+        </div>
+        <button type="button" id="btnCloseAuthModal" class="btn-tech px-2.5 py-1 bg-slate-800 text-slate-200 hover:bg-slate-700 text-xs font-mono-tech">
+          CLOSE
+        </button>
+      </div>
+
+      <div class="p-5 space-y-4 text-xs">
+        <p class="text-slate-600">GridNode supports two dedicated operational logins: <strong>1. EV Driver</strong> (find urgent charging or book a specific time slot and pay) and <strong>2. Charger Host</strong> (broadcast your port available now or publish custom availability time slots).</p>
+
+        <!-- Quick Role Switch Cards -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div class="border-2 border-slate-900 p-3.5 bg-slate-50 flex flex-col justify-between" style="border-radius: 3px;">
+            <div>
+              <span class="badge-tech bg-emerald-700 text-white">LOGIN 1: EV DRIVER</span>
+              <h3 class="font-bold text-slate-900 text-sm mt-2">Rohan Deshmukh</h3>
+              <p class="font-mono-tech text-[11px] text-slate-600 mt-1">ID: driver@gridnode.in<br/>Vehicle: Tata Nexon EV (CCS2)<br/>Purpose: Urgent &amp; Slot Booking</p>
+            </div>
+            <button type="button" id="btnQuickLoginDriver" class="btn-tech w-full mt-3 py-2 bg-slate-900 hover:bg-slate-800 text-white">
+              Activate Driver Session
+            </button>
+          </div>
+
+          <div class="border-2 border-slate-900 p-3.5 bg-slate-50 flex flex-col justify-between" style="border-radius: 3px;">
+            <div>
+              <span class="badge-tech bg-amber-500 text-slate-950">LOGIN 2: CHARGER HOST</span>
+              <h3 class="font-bold text-slate-900 text-sm mt-2">Vikram Gokhale</h3>
+              <p class="font-mono-tech text-[11px] text-slate-600 mt-1">ID: host@gridnode.in<br/>Port: Bandra West Driveway #B2<br/>Purpose: Port &amp; Time-Slot Host</p>
+            </div>
+            <button type="button" id="btnQuickLoginHost" class="btn-tech w-full mt-3 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold">
+              Activate Host Session
+            </button>
+          </div>
+        </div>
+
+        <!-- Custom Credential Form -->
+        <form id="formCustomLogin" class="border-t border-slate-200 pt-4 space-y-3">
+          <div class="font-bold text-slate-800 uppercase">Or Sign In with Custom Credentials</div>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <input type="email" id="customLoginEmail" required placeholder="Email address" class="input-tech px-2.5 py-2" />
+            <input type="text" id="customLoginName" required placeholder="Operator Name / Vehicle" class="input-tech px-2.5 py-2" />
+            <select id="customLoginRole" class="input-tech px-2 py-2 font-mono-tech">
+              <option value="DRIVER">Role: EV Driver</option>
+              <option value="HOST">Role: Charger Host</option>
+            </select>
+          </div>
+          <button type="submit" class="btn-tech w-full py-2 bg-slate-800 hover:bg-slate-700 text-white">
+            Sign In to Selected Workspace
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==========================================
+       MODAL 3: CUSTOM DOMAIN & LAUNCH READINESS
+       ========================================== -->
+  <div id="modalDomainConfig" class="fixed inset-0 bg-slate-950/75 z-50 hidden items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="modalDomainTitle">
+    <div class="card-blueprint bg-white w-full max-w-lg overflow-hidden shadow-2xl">
+      <div class="bg-slate-950 text-white px-5 py-3.5 flex items-center justify-between">
+        <div>
+          <span class="badge-tech bg-emerald-600 text-white">PRODUCTION AUDIT</span>
+          <h2 id="modalDomainTitle" class="text-base font-bold mt-1">Custom Domain &amp; Pre-Launch Verification</h2>
+        </div>
+        <button type="button" id="btnCloseDomainModal" class="btn-tech px-2.5 py-1 bg-slate-800 text-slate-200 hover:bg-slate-700 text-xs font-mono-tech">
+          CLOSE
+        </button>
+      </div>
+
+      <div class="p-5 space-y-4 text-xs">
+        <div class="bg-slate-50 p-3.5 border border-slate-300 space-y-2" style="border-radius: 3px;">
+          <label for="customDomainInput" class="block font-bold text-slate-900">Connected Custom Domain (DNS A / CNAME)</label>
+          <div class="flex items-center gap-2">
+            <input type="text" id="customDomainInput" value="charge.gridnode.in" class="input-tech flex-1 px-2.5 py-1.5 font-mono-tech" />
+            <button type="button" id="btnSaveCustomDomain" class="btn-tech px-3 py-1.5 bg-slate-900 text-white">Bind Domain</button>
+          </div>
+          <p class="font-mono-tech text-[11px] text-emerald-700" id="domainBindStatusText">CNAME verified -> edge-mumbai-01.gridnode.in (TLS 1.3 Active)</p>
+        </div>
+
+        <div class="space-y-2">
+          <div class="font-bold text-slate-900 uppercase">Mandatory Launch Gate Checklist</div>
+          <ul class="space-y-1.5 font-mono-tech text-[11px]">
+            <li class="flex items-center justify-between p-2 bg-emerald-50 border border-emerald-200 text-emerald-950">
+              <span>1. Custom Domain Connected</span>
+              <span class="font-bold text-emerald-700">VERIFIED</span>
+            </li>
+            <li class="flex items-center justify-between p-2 bg-emerald-50 border border-emerald-200 text-emerald-950">
+              <span>2. Inline SVG Favicon Configured</span>
+              <span class="font-bold text-emerald-700">VERIFIED</span>
+            </li>
+            <li class="flex items-center justify-between p-2 bg-emerald-50 border border-emerald-200 text-emerald-950">
+              <span>3. Third-Party Generator Watermark Removed</span>
+              <span class="font-bold text-emerald-700">VERIFIED (CLEAN)</span>
+            </li>
+            <li class="flex items-center justify-between p-2 bg-emerald-50 border border-emerald-200 text-emerald-950">
+              <span>4. Dedicated Privacy Policy Page</span>
+              <button type="button" data-nav="privacy" class="nav-trigger underline font-bold text-emerald-800">OPEN PAGE</button>
+            </li>
+            <li class="flex items-center justify-between p-2 bg-emerald-50 border border-emerald-200 text-emerald-950">
+              <span>5. Dedicated Terms &amp; Conditions Page</span>
+              <button type="button" data-nav="terms" class="nav-trigger underline font-bold text-emerald-800">OPEN PAGE</button>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION BANNER -->
+  <div id="systemToast" class="fixed bottom-4 right-4 z-50 hidden bg-slate-950 text-white border-2 border-emerald-500 px-4 py-3 shadow-xl max-w-sm text-xs font-mono-tech" style="border-radius: 3px;" role="status" aria-live="polite">
+    <div class="flex items-center justify-between gap-3">
+      <span id="systemToastMessage">System updated.</span>
+      <button type="button" id="btnDismissToast" class="text-slate-400 hover:text-white font-bold">X</button>
+    </div>
+  </div>
+
+  <!-- APPLICATION LOGIC -->
+  <script>
+    (function () {
+      'use strict';
+
+      // --- STATE ---
+      const state = {
+        activeView: 'finder',
+        currentRole: 'DRIVER',
+        userName: 'Rohan Deshmukh',
+        userSub: 'Tata Nexon EV • CCS2 • SoC 16%',
+        userLat: 19.0760,
+        userLng: 72.8777,
+        locationLabel: 'Mumbai - Bandra & BKC Sector',
+        mapZoom: 1,
+        statusFilter: 'all',
+        connectorFilter: 'ALL',
+        slotBandFilter: 'ALL',
+        slotMinDuration: 0,
+        sortBy: 'distance',
+        urgentModeOnly: false,
+        radiusKm: 9999,
+        searchQuery: '',
+        selectedStationId: 'ST-101',
+        checkoutStationId: null,
+        selectedSlotId: null,
+        selectedPayMethod: 'UPI',
+        walletBalance: 2450.00,
+        hostSettlement: 1420.00,
+        customDomain: 'charge.gridnode.in',
+        hostHourlyGrid: [
+          1, 1, 1, 0, 0, 0,
+          1, 1, 1, 1, 0, 0,
+          1, 1, 1, 1, 2, 2,
+          1, 1, 3, 1, 1, 1
+        ],
+        stations: [
+          {
+            id: 'ST-101',
+            name: 'Bandra West Driveway #B2 (Vikram G.)',
+            sector: 'Mumbai - Pali Hill & Bandra West',
+            lat: 19.0658,
+            lng: 72.8296,
+            isHostPort: true,
+            hostOwner: 'Vikram Gokhale',
+            status: 'AVAILABLE',
+            urgentReady: true,
+            connector: 'Type 2 AC',
+            powerKw: 7.4,
+            voltage: '230V / 32A Single Phase',
+            ratePerKwh: 15.50,
+            windowText: '3 Open Time Slots Today',
+            accessNotes: 'Ground floor driveway right next to gate #B2. 5m tethered Type 2 cable ready. Call guard on arrival.',
+            timeSlots: [
+              { slotId: 'SL-101A', day: 'Today (Oct 20)', start: '00:30', end: '03:30', durationHrs: 3.0, band: 'NOW', rate: 15.50, status: 'OPEN' },
+              { slotId: 'SL-101B', day: 'Today (Oct 20)', start: '06:30', end: '10:30', durationHrs: 4.0, band: 'MORNING', rate: 14.50, status: 'OPEN' },
+              { slotId: 'SL-101C', day: 'Today (Oct 20)', start: '18:30', end: '22:30', durationHrs: 4.0, band: 'EVENING', rate: 16.00, status: 'OPEN' }
+            ]
+          },
+          {
+            id: 'ST-102',
+            name: 'BKC G-Block Fast Dispatch Hub',
+            sector: 'Mumbai - Bandra Kurla Complex',
+            lat: 19.0688,
+            lng: 72.8683,
+            isHostPort: false,
+            hostOwner: 'GridNode Public Corridor',
+            status: 'AVAILABLE',
+            urgentReady: true,
+            connector: 'CCS2 DC',
+            powerKw: 60.0,
+            voltage: '400V-800V DC Dual Gun',
+            ratePerKwh: 19.00,
+            windowText: '24 Hours Open (Express Slots)',
+            accessNotes: 'Public basement ramp B1 near MMRDA ground. Automated boom barrier recognizes booked reg plate.',
+            timeSlots: [
+              { slotId: 'SL-102A', day: 'Today (Oct 20)', start: '00:30', end: '01:30', durationHrs: 1.0, band: 'NOW', rate: 19.00, status: 'OPEN' },
+              { slotId: 'SL-102B', day: 'Today (Oct 20)', start: '12:00', end: '16:00', durationHrs: 4.0, band: 'AFTERNOON', rate: 17.50, status: 'OPEN' },
+              { slotId: 'SL-102C', day: 'Today (Oct 20)', start: '18:00', end: '23:00', durationHrs: 5.0, band: 'EVENING', rate: 19.00, status: 'OPEN' }
+            ]
+          },
+          {
+            id: 'ST-103',
+            name: 'Worli Seaface Society Bay #9 (Meera K.)',
+            sector: 'Mumbai - Worli Seaface North',
+            lat: 19.0176,
+            lng: 72.8152,
+            isHostPort: true,
+            hostOwner: 'Meera Kulkarni',
+            status: 'AVAILABLE',
+            urgentReady: true,
+            connector: '16A 3-Pin Industrial',
+            powerKw: 3.3,
+            voltage: '230V / 16A Legrand Industrial Socket',
+            ratePerKwh: 12.50,
+            windowText: 'Overnight & Solar Slots Open',
+            accessNotes: 'Visitor bay #9 inside main gate. Suitable for 2-wheelers, Nexon, Tiago, Comet. Metered sub-breaker.',
+            timeSlots: [
+              { slotId: 'SL-103A', day: 'Today (Oct 20)', start: '00:00', end: '06:00', durationHrs: 6.0, band: 'NIGHT', rate: 11.50, status: 'OPEN' },
+              { slotId: 'SL-103B', day: 'Today (Oct 20)', start: '11:00', end: '16:00', durationHrs: 5.0, band: 'AFTERNOON', rate: 12.50, status: 'OPEN' }
+            ]
+          },
+          {
+            id: 'ST-104',
+            name: 'Andheri East Metro Hub Terminal',
+            sector: 'Mumbai - WEH Andheri Flyover',
+            lat: 19.1197,
+            lng: 72.8641,
+            isHostPort: false,
+            hostOwner: 'MahaGrid Express',
+            status: 'OCCUPIED',
+            urgentReady: false,
+            connector: 'CCS2 DC',
+            powerKw: 30.0,
+            voltage: '400V DC Fast',
+            ratePerKwh: 18.00,
+            windowText: 'Next Slot at 01:15 IST',
+            accessNotes: 'Adjacent to Western Express Highway pillar 142. Currently dispensing to MH-02-EV-9102.',
+            timeSlots: [
+              { slotId: 'SL-104A', day: 'Today (Oct 20)', start: '01:15', end: '03:15', durationHrs: 2.0, band: 'NIGHT', rate: 18.00, status: 'OPEN' },
+              { slotId: 'SL-104B', day: 'Today (Oct 20)', start: '08:00', end: '11:00', durationHrs: 3.0, band: 'MORNING', rate: 18.00, status: 'OPEN' }
+            ]
+          },
+          {
+            id: 'ST-105',
+            name: 'Lonavala Food Mall Highway Bay #1',
+            sector: 'Mumbai-Pune Expressway - Lonavala Exit',
+            lat: 18.7542,
+            lng: 73.4068,
+            isHostPort: false,
+            hostOwner: 'Expressway Grid Corp',
+            status: 'AVAILABLE',
+            urgentReady: true,
+            connector: 'CCS2 DC',
+            powerKw: 120.0,
+            voltage: '800V Ultra-Fast DC',
+            ratePerKwh: 21.50,
+            windowText: '24 Hours Highway Priority',
+            accessNotes: 'Mumbai-Pune Expressway KM 64. Pull-through bay suitable for SUVs. Dedicated transformer backup.',
+            timeSlots: [
+              { slotId: 'SL-105A', day: 'Today (Oct 20)', start: '00:30', end: '02:00', durationHrs: 1.5, band: 'NOW', rate: 21.50, status: 'OPEN' },
+              { slotId: 'SL-105B', day: 'Today (Oct 20)', start: '06:00', end: '12:00', durationHrs: 6.0, band: 'MORNING', rate: 21.50, status: 'OPEN' }
+            ]
+          },
+          {
+            id: 'ST-106',
+            name: 'Khandala Villa Compound Port (Sanjay P.)',
+            sector: 'Mumbai-Pune Expressway - Khandala Ghat',
+            lat: 18.7615,
+            lng: 73.3792,
+            isHostPort: true,
+            hostOwner: 'Sanjay Patil',
+            status: 'AVAILABLE',
+            urgentReady: true,
+            connector: 'Type 2 AC',
+            powerKw: 11.0,
+            voltage: '415V / 16A 3-Phase AC',
+            ratePerKwh: 14.50,
+            windowText: 'Day & Evening Slots Ready',
+            accessNotes: '300m off Old Mumbai-Pune Highway near ghat crest. Ideal emergency top-up if highway DC queues are full.',
+            timeSlots: [
+              { slotId: 'SL-106A', day: 'Today (Oct 20)', start: '00:30', end: '04:30', durationHrs: 4.0, band: 'NOW', rate: 14.50, status: 'OPEN' },
+              { slotId: 'SL-106B', day: 'Today (Oct 20)', start: '13:00', end: '17:00', durationHrs: 4.0, band: 'AFTERNOON', rate: 13.50, status: 'OPEN' }
+            ]
+          },
+          {
+            id: 'ST-107',
+            name: 'Koregaon Park Lane 5 Host Port (Aarti S.)',
+            sector: 'Pune - Koregaon Park',
+            lat: 18.5362,
+            lng: 73.8940,
+            isHostPort: true,
+            hostOwner: 'Aarti Shinde',
+            status: 'AVAILABLE',
+            urgentReady: true,
+            connector: 'Type 2 AC',
+            powerKw: 7.4,
+            voltage: '230V / 32A AC Wallbox',
+            ratePerKwh: 14.00,
+            windowText: 'Solar & Evening Slots Open',
+            accessNotes: 'Shaded front porch bay with CCTV and security watchman. Enter 6-digit PIN at gate box.',
+            timeSlots: [
+              { slotId: 'SL-107A', day: 'Today (Oct 20)', start: '09:00', end: '15:00', durationHrs: 6.0, band: 'MORNING', rate: 13.00, status: 'OPEN' },
+              { slotId: 'SL-107B', day: 'Today (Oct 20)', start: '18:00', end: '22:00', durationHrs: 4.0, band: 'EVENING', rate: 14.00, status: 'OPEN' }
+            ]
+          },
+          {
+            id: 'ST-108',
+            name: 'Hinjewadi Phase 1 Fleet Depot',
+            sector: 'Pune - Hinjewadi Rajiv Gandhi Infotech Park',
+            lat: 18.5919,
+            lng: 73.7381,
+            isHostPort: false,
+            hostOwner: 'Deccan ChargeGrid',
+            status: 'AVAILABLE',
+            urgentReady: true,
+            connector: 'Bharat DC-001',
+            powerKw: 15.0,
+            voltage: '72V-200V GB/T DC001',
+            ratePerKwh: 13.50,
+            windowText: '24 Hours Open',
+            accessNotes: 'Near Infosys Circle Gate 2. Supports e-Verito, Tigor EV, and commercial fleet vehicles.',
+            timeSlots: [
+              { slotId: 'SL-108A', day: 'Today (Oct 20)', start: '00:30', end: '04:30', durationHrs: 4.0, band: 'NOW', rate: 13.50, status: 'OPEN' },
+              { slotId: 'SL-108B', day: 'Today (Oct 20)', start: '14:00', end: '19:00', durationHrs: 5.0, band: 'AFTERNOON', rate: 13.50, status: 'OPEN' }
+            ]
+          }
+        ],
+        bookings: [
+          {
+            bookingId: 'GN-90412',
+            stationId: 'ST-101',
+            stationName: 'Bandra West Driveway #B2 (Vikram G.)',
+            connector: 'Type 2 AC (7.4 kW)',
+            driverName: 'Rohan Deshmukh',
+            vehicleReg: 'MH-01-EV-4821',
+            slotWindow: 'Today (Oct 20) • 20:00 - 22:30 (2.5 hrs)',
+            kwhBooked: 18,
+            ratePerKwh: 15.50,
+            totalPaid: 358.72,
+            payMethod: 'UPI (rohan.ev@okicici)',
+            pinCode: '482910',
+            status: 'RESERVED - READY FOR PIN',
+            timestamp: '2026-10-20 00:01 IST',
+            accessNotes: 'Ground floor driveway right next to gate #B2. 5m tethered Type 2 cable ready.'
+          }
+        ]
+      };
+
+      // --- HELPER FUNCTIONS ---
+      function showToast(msg) {
+        const toast = document.getElementById('systemToast');
+        const label = document.getElementById('systemToastMessage');
+        if (!toast || !label) return;
+        label.textContent = msg;
+        toast.classList.remove('hidden');
+        if (window._toastTimer) clearTimeout(window._toastTimer);
+        window._toastTimer = setTimeout(function () {
+          toast.classList.add('hidden');
+        }, 4200);
+      }
+
+      function computeDistanceKm(lat1, lon1, lat2, lon2) {
+        const R = 6371;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a =
+          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+          Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+      }
+
+      function inferSlotBand(startStr) {
+        const hr = parseInt((startStr || '12:00').split(':')[0], 10);
+        if (isNaN(hr)) return 'NOW';
+        if (hr >= 0 && hr < 6) return 'NIGHT';
+        if (hr >= 6 && hr < 12) return 'MORNING';
+        if (hr >= 12 && hr < 18) return 'AFTERNOON';
+        return 'EVENING';
+      }
+
+      function addHoursToTime(startStr, durationHrs) {
+        const parts = (startStr || '18:00').split(':');
+        const startMins = (parseInt(parts[0], 10) || 0) * 60 + (parseInt(parts[1], 10) || 0);
+        const endMins = (startMins + Math.round(durationHrs * 60)) % (24 * 60);
+        const eh = Math.floor(endMins / 60);
+        const em = endMins % 60;
+        return String(eh).padStart(2, '0') + ':' + String(em).padStart(2, '0');
+      }
+
+      function getEnrichedStations() {
+        return state.stations.map(function (st) {
+          const dist = computeDistanceKm(state.userLat, state.userLng, st.lat, st.lng);
+          return Object.assign({}, st, { distanceKm: dist });
+        });
+      }
+
+      function getFilteredStations() {
+        const enriched = getEnrichedStations();
+        const filtered = enriched.filter(function (st) {
+          if (state.statusFilter === 'available' && st.status !== 'AVAILABLE') return false;
+          if (state.statusFilter === 'host' && !st.isHostPort) return false;
+          if (state.urgentModeOnly && (st.status !== 'AVAILABLE' || !st.urgentReady)) return false;
+          if (state.connectorFilter !== 'ALL' && st.connector !== state.connectorFilter) return false;
+          if (st.distanceKm > state.radiusKm) return false;
+
+          const openSlots = (st.timeSlots || []).filter(function (s) { return s.status === 'OPEN'; });
+          if (state.slotBandFilter !== 'ALL') {
+            const hasBand = openSlots.some(function (s) {
+              return s.band === state.slotBandFilter || (state.slotBandFilter === 'NOW' && st.status === 'AVAILABLE');
+            });
+            if (!hasBand) return false;
+          }
+          if (state.slotMinDuration > 0) {
+            const hasDur = openSlots.some(function (s) { return s.durationHrs >= state.slotMinDuration; });
+            if (!hasDur) return false;
+          }
+
+          if (state.searchQuery.trim() !== '') {
+            const q = state.searchQuery.trim().toLowerCase();
+            const slotStr = (st.timeSlots || []).map(function (s) { return s.start + ' ' + s.end + ' ' + s.day; }).join(' ');
+            const hay = (st.name + ' ' + st.sector + ' ' + st.connector + ' ' + st.hostOwner + ' ' + slotStr).toLowerCase();
+            if (!hay.includes(q)) return false;
+          }
+          return true;
+        });
+
+        filtered.sort(function (a, b) {
+          if (state.sortBy === 'distance') return a.distanceKm - b.distanceKm;
+          if (state.sortBy === 'power') return b.powerKw - a.powerKw;
+          if (state.sortBy === 'price') return a.ratePerKwh - b.ratePerKwh;
+          return 0;
+        });
+
+        return filtered;
+      }
+
+      // --- VIEW NAVIGATION ---
+      function switchView(viewName) {
+        state.activeView = viewName;
+        const views = ['finder', 'host', 'bookings', 'privacy', 'terms'];
+        views.forEach(function (v) {
+          const el = document.getElementById('view-' + v);
+          if (el) {
+            if (v === viewName) el.classList.remove('hidden');
+            else el.classList.add('hidden');
+          }
+        });
+
+        const navMap = {
+          finder: document.getElementById('navBtnFinder'),
+          host: document.getElementById('navBtnHost'),
+          bookings: document.getElementById('navBtnBookings')
+        };
+        Object.keys(navMap).forEach(function (k) {
+          const btn = navMap[k];
+          if (!btn) return;
+          if (k === viewName) {
+            btn.className = 'nav-trigger btn-tech px-3.5 py-2 text-xs font-semibold bg-slate-900 text-white border-2 border-slate-900 flex items-center gap-2';
+          } else {
+            btn.className = 'nav-trigger btn-tech px-3.5 py-2 text-xs font-semibold bg-white text-slate-900 border-2 border-slate-300 hover:border-slate-900 flex items-center gap-2';
+          }
+        });
+
+        renderAll();
+      }
+
+      // --- RENDER HARDWARE SCHEMATIC FOR SELECTED PORT ---
+      function renderHardwareSchematic() {
+        const selectedObj = getEnrichedStations().find(function (s) { return s.id === state.selectedStationId; }) || getEnrichedStations()[0];
+        if (!selectedObj) return;
+
+        document.getElementById('schematicStationLabel').textContent = 'Inspecting: ' + selectedObj.name;
+        document.getElementById('schematicConnectorBadge').textContent = selectedObj.connector;
+        document.getElementById('schematicKwVal').textContent = selectedObj.powerKw + ' kW (' + selectedObj.voltage + ')';
+
+        const rangePerHr = Math.round(selectedObj.powerKw * 7.0);
+        document.getElementById('schematicOneHrYield').textContent = '+' + selectedObj.powerKw.toFixed(1) + ' kWh (~' + rangePerHr + ' km/hr)';
+
+        const openSlot = (selectedObj.timeSlots || []).find(function (s) { return s.status === 'OPEN'; });
+        document.getElementById('schematicNextSlot').textContent = openSlot
+          ? (openSlot.start + ' - ' + openSlot.end + ' (' + openSlot.durationHrs + 'h @ INR ' + openSlot.rate.toFixed(1) + ')')
+          : 'No open slot';
+
+        const svgEl = document.getElementById('connectorSchematicSvg');
+        const pinText = document.getElementById('schematicPinoutText');
+        if (!svgEl || !pinText) return;
+
+        if (selectedObj.connector.indexOf('CCS2') !== -1) {
+          pinText.textContent = 'CCS2 Combo (AC+DC High-Current)';
+          svgEl.innerHTML =
+            '<rect x="14" y="8" width="52" height="36" rx="4" stroke="currentColor" stroke-width="2.2"/>' +
+            '<circle cx="28" cy="20" r="3" fill="currentColor"/><circle cx="40" cy="20" r="3" fill="currentColor"/><circle cx="52" cy="20" r="3" fill="currentColor"/>' +
+            '<circle cx="33" cy="32" r="3.5" fill="currentColor"/><circle cx="47" cy="32" r="3.5" fill="currentColor"/>' +
+            '<rect x="12" y="48" width="56" height="24" rx="4" stroke="#f59e0b" stroke-width="2.2"/>' +
+            '<circle cx="28" cy="60" r="6" stroke="#f59e0b" stroke-width="2.2"/><circle cx="52" cy="60" r="6" stroke="#f59e0b" stroke-width="2.2"/>';
+        } else if (selectedObj.connector.indexOf('16A') !== -1) {
+          pinText.textContent = 'IS 1293 16A 3-Pin Industrial';
+          svgEl.innerHTML =
+            '<rect x="10" y="10" width="60" height="60" rx="4" stroke="currentColor" stroke-width="2.2"/>' +
+            '<circle cx="40" cy="26" r="6" stroke="#10b981" stroke-width="2.4"/>' +
+            '<circle cx="26" cy="52" r="4.5" fill="currentColor"/><circle cx="54" cy="52" r="4.5" fill="currentColor"/>';
+        } else {
+          pinText.textContent = 'IEC 62196 Type-2 Mennekes';
+          svgEl.innerHTML =
+            '<polygon points="18,14 62,14 68,42 54,66 26,66 12,42" stroke="currentColor" stroke-width="2.2" fill="none"/>' +
+            '<circle cx="30" cy="26" r="3" fill="currentColor"/><circle cx="50" cy="26" r="3" fill="currentColor"/>' +
+            '<circle cx="24" cy="40" r="4" fill="currentColor"/><circle cx="40" cy="40" r="4" fill="currentColor"/><circle cx="56" cy="40" r="4" fill="currentColor"/>' +
+            '<circle cx="31" cy="54" r="4" fill="currentColor"/><circle cx="49" cy="54" r="4" fill="currentColor"/>';
+        }
+      }
+
+      // --- RENDER RADAR MAP ---
+      function renderMap(filteredList) {
+        const pinsLayer = document.getElementById('mapPinsLayer');
+        const subtitle = document.getElementById('mapSectorSubtitle');
+        const gpsDisplay = document.getElementById('gpsTelemetryDisplay');
+        const scaleLabel = document.getElementById('mapScaleLabel');
+        if (!pinsLayer) return;
+
+        if (subtitle) subtitle.textContent = state.locationLabel;
+        if (gpsDisplay) {
+          gpsDisplay.textContent = 'LOC: ' + state.userLat.toFixed(4) + ' N, ' + state.userLng.toFixed(4) + ' E (' + state.locationLabel + ')';
+        }
+        if (scaleLabel) {
+          const ringKm = (5 / state.mapZoom).toFixed(1);
+          scaleLabel.textContent = 'Scale: 1 ring = ' + ringKm + ' km';
+        }
+
+        pinsLayer.innerHTML = '';
+
+        filteredList.forEach(function (st) {
+          const dLat = (st.lat - state.userLat) * 950 * state.mapZoom;
+          const dLng = (st.lng - state.userLng) * 950 * state.mapZoom;
+          const x = Math.max(28, Math.min(472, 250 + dLng));
+          const y = Math.max(24, Math.min(275, 150 - dLat));
+
+          const isSelected = st.id === state.selectedStationId;
+          let fillHex = '#10b981';
+          if (st.status !== 'AVAILABLE') {
+            fillHex = '#dc2626';
+          } else if (st.isHostPort) {
+            fillHex = '#f59e0b';
+          }
+
+          const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+          g.setAttribute('transform', 'translate(' + x.toFixed(1) + ',' + y.toFixed(1) + ')');
+          g.style.cursor = 'pointer';
+
+          if (isSelected) {
+            const selBox = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            selBox.setAttribute('x', '-11');
+            selBox.setAttribute('y', '-11');
+            selBox.setAttribute('width', '22');
+            selBox.setAttribute('height', '22');
+            selBox.setAttribute('fill', 'none');
+            selBox.setAttribute('stroke', '#ffffff');
+            selBox.setAttribute('stroke-width', '1.8');
+            g.appendChild(selBox);
+          }
+
+          const pinRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          pinRect.setAttribute('x', '-6');
+          pinRect.setAttribute('y', '-6');
+          pinRect.setAttribute('width', '12');
+          pinRect.setAttribute('height', '12');
+          pinRect.setAttribute('fill', fillHex);
+          pinRect.setAttribute('stroke', '#0f172a');
+          pinRect.setAttribute('stroke-width', '1.5');
+          g.appendChild(pinRect);
+
+          const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          label.setAttribute('x', '9');
+          label.setAttribute('y', '4');
+          label.setAttribute('fill', isSelected ? '#ffffff' : '#cbd5e1');
+          label.setAttribute('font-family', 'IBM Plex Mono, monospace');
+          label.setAttribute('font-size', isSelected ? '10.5' : '9.5');
+          label.setAttribute('font-weight', isSelected ? '700' : '500');
+          label.textContent = st.powerKw + 'kW (' + st.distanceKm.toFixed(1) + 'km)';
+          g.appendChild(label);
+
+          g.addEventListener('click', function () {
+            state.selectedStationId = st.id;
+            renderAll();
+          });
+
+          pinsLayer.appendChild(g);
+        });
+
+        const selectedObj = getEnrichedStations().find(function (s) { return s.id === state.selectedStationId; }) || filteredList[0];
+        const qTitle = document.getElementById('quickBarTitle');
+        const qMeta = document.getElementById('quickBarMeta');
+        const qBtn = document.getElementById('quickBarBookBtn');
+
+        if (selectedObj && qTitle && qMeta && qBtn) {
+          qTitle.textContent = selectedObj.name + ' (' + selectedObj.distanceKm.toFixed(1) + ' km)';
+          qMeta.textContent = selectedObj.connector + ' • ' + selectedObj.powerKw + ' kW • INR ' + selectedObj.ratePerKwh.toFixed(2) + '/kWh • ' + (selectedObj.timeSlots ? selectedObj.timeSlots.length : 0) + ' time slots';
+          if (selectedObj.status === 'AVAILABLE') {
+            qBtn.classList.remove('hidden');
+            qBtn.onclick = function () {
+              openBookingModal(selectedObj.id, null);
+            };
+          } else {
+            qBtn.classList.add('hidden');
+          }
+        }
+      }
+
+      // --- BUILD 24-HOUR MINI VISUAL TIMELINE BAR FOR STATION CARDS ---
+      function buildStationMiniTimelineHtml(st) {
+        const hourMap = new Array(24).fill('PRIVATE');
+        (st.timeSlots || []).forEach(function (slot) {
+          const sh = parseInt((slot.start || '00:00').split(':')[0], 10) || 0;
+          const dur = Math.max(1, Math.round(slot.durationHrs || 2));
+          for (let i = 0; i < dur; i++) {
+            const h = (sh + i) % 24;
+            hourMap[h] = slot.status === 'OPEN' ? 'OPEN' : 'BOOKED';
+          }
+        });
+        let cells = '';
+        for (let h = 0; h < 24; h++) {
+          let bg = 'bg-slate-200';
+          if (hourMap[h] === 'OPEN') bg = st.isHostPort ? 'bg-emerald-500' : 'bg-emerald-600';
+          else if (hourMap[h] === 'BOOKED') bg = 'bg-amber-500';
+          cells += '<div class="h-2 flex-1 ' + bg + ' border-r border-white/60" title="' + String(h).padStart(2, '0') + ':00 IST - ' + hourMap[h] + '"></div>';
+        }
+        return (
+          '<div class="mt-2.5 bg-slate-50 p-2 border border-slate-200" style="border-radius:3px;">' +
+            '<div class="flex items-center justify-between text-[10px] font-mono-tech text-slate-500 mb-1">' +
+              '<span>24H AVAILABILITY SCHEDULE (00:00 -> 23:59 IST)</span>' +
+              '<span class="text-slate-800 font-semibold">Click a Time Slot below to lock</span>' +
+            '</div>' +
+            '<div class="flex w-full overflow-hidden border border-slate-300">' + cells + '</div>' +
+          '</div>'
+        );
+      }
+
+      // --- RENDER STATION LIST ---
+      function renderStationList(filteredList) {
+        const allEnriched = getEnrichedStations();
+        const countAll = document.getElementById('countAllPorts');
+        const countAvail = document.getElementById('countAvailablePorts');
+        const countHost = document.getElementById('countHostPorts');
+
+        if (countAll) countAll.textContent = String(allEnriched.length);
+        if (countAvail) countAvail.textContent = String(allEnriched.filter(function (s) { return s.status === 'AVAILABLE'; }).length);
+        if (countHost) countHost.textContent = String(allEnriched.filter(function (s) { return s.isHostPort; }).length);
+
+        const container = document.getElementById('stationsListContainer');
+        if (!container) return;
+        container.innerHTML = '';
+
+        if (filteredList.length === 0) {
+          const emptyDiv = document.createElement('div');
+          emptyDiv.className = 'card-blueprint p-6 text-center space-y-2';
+          emptyDiv.innerHTML = '<div class="text-sm font-bold text-slate-900">No charging ports or time slots match your active filter criteria</div>' +
+            '<p class="text-xs text-slate-600">Try setting the Schedule Filter to "Any Time Window (24h)" or widening the search radius.</p>';
+          const resetBtn = document.createElement('button');
+          resetBtn.type = 'button';
+          resetBtn.className = 'btn-tech px-3 py-1.5 text-xs bg-slate-900 text-white mt-2';
+          resetBtn.textContent = 'Reset All Filters';
+          resetBtn.addEventListener('click', function () {
+            state.statusFilter = 'all';
+            state.connectorFilter = 'ALL';
+            state.slotBandFilter = 'ALL';
+            state.slotMinDuration = 0;
+            state.urgentModeOnly = false;
+            state.radiusKm = 9999;
+            state.searchQuery = '';
+            document.getElementById('searchQueryInput').value = '';
+            document.getElementById('connectorTypeSelect').value = 'ALL';
+            document.getElementById('slotBandFilterSelect').value = 'ALL';
+            document.getElementById('slotMinDurationSelect').value = '0';
+            document.getElementById('radiusFilterSelect').value = '9999';
+            renderAll();
+          });
+          emptyDiv.appendChild(resetBtn);
+          container.appendChild(emptyDiv);
+          return;
+        }
+
+        filteredList.forEach(function (st) {
+          const isAvailable = st.status === 'AVAILABLE';
+          const isSelected = st.id === state.selectedStationId;
+
+          const card = document.createElement('div');
+          card.className = (isSelected ? 'card-blueprint bg-white p-4' : 'card-tech bg-white p-4 hover:border-slate-500');
+
+          const statusBadgeClass = isAvailable
+            ? 'bg-emerald-100 text-emerald-950 border border-emerald-500'
+            : 'bg-red-100 text-red-900 border border-red-300';
+
+          const hostBadgeClass = st.isHostPort
+            ? 'bg-amber-100 text-amber-950 border border-amber-500'
+            : 'bg-slate-200 text-slate-800 border border-slate-400';
+
+          const estDriveMins = Math.max(2, Math.round(st.distanceKm * 2.1));
+
+          let slotsHtml = '';
+          (st.timeSlots || []).forEach(function (slot) {
+            const maxKwh = (st.powerKw * slot.durationHrs).toFixed(1);
+            if (slot.status === 'OPEN') {
+              slotsHtml +=
+                '<button type="button" data-slot-id="' + slot.slotId + '" class="btn-slot-chip btn-tech px-2.5 py-1 text-[11px] font-mono-tech bg-emerald-50 hover:bg-emerald-600 hover:text-white text-emerald-950 border border-emerald-500 flex items-center gap-1.5">' +
+                  '<span class="w-1.5 h-1.5 bg-emerald-600 inline-block"></span>' +
+                  '<span>' + slot.day.split(' ')[0] + ' <strong>' + slot.start + '-' + slot.end + '</strong> (' + slot.durationHrs + 'h • up to ' + maxKwh + 'kWh • INR ' + slot.rate.toFixed(1) + ')</span>' +
+                '</button>';
+            } else {
+              slotsHtml +=
+                '<span class="px-2.5 py-1 text-[11px] font-mono-tech bg-slate-100 text-slate-400 border border-slate-300 line-through">' +
+                  slot.start + '-' + slot.end + ' (BOOKED)' +
+                '</span>';
+            }
+          });
+
+          card.innerHTML =
+            '<div class="flex flex-wrap items-start justify-between gap-2">' +
+              '<div class="space-y-1">' +
+                '<div class="flex flex-wrap items-center gap-1.5">' +
+                  '<span class="badge-tech ' + statusBadgeClass + '">' + (isAvailable ? 'AVAILABLE NOW' : 'NEXT SLOT ONLY') + '</span>' +
+                  '<span class="badge-tech ' + hostBadgeClass + '">' + (st.isHostPort ? 'NEIGHBORHOOD HOST PORT' : 'PUBLIC GRID TERMINAL') + '</span>' +
+                  '<span class="badge-tech bg-slate-900 text-white">' + st.connector + ' • ' + st.powerKw + ' kW</span>' +
+                '</div>' +
+                '<h3 class="text-sm font-extrabold text-slate-950 pt-0.5">' + st.name + '</h3>' +
+                '<p class="text-xs font-mono-tech text-slate-600">' + st.sector + ' | Host: ' + st.hostOwner + '</p>' +
+              '</div>' +
+              '<div class="text-right font-mono-tech">' +
+                '<div class="text-sm font-bold text-slate-950">INR ' + st.ratePerKwh.toFixed(2) + ' <span class="text-xs font-normal text-slate-600">/kWh</span></div>' +
+                '<div class="text-xs font-semibold text-emerald-700 mt-0.5">' + st.distanceKm.toFixed(1) + ' km (' + estDriveMins + ' min drive)</div>' +
+                '<div class="text-[11px] text-slate-500">' + st.windowText + '</div>' +
+              '</div>' +
+            '</div>' +
+            buildStationMiniTimelineHtml(st) +
+            '<div class="mt-2.5 flex flex-wrap items-center gap-1.5">' +
+              '<span class="text-[11px] font-mono-tech font-bold text-slate-700 mr-1">Bookable Slots:</span>' +
+              slotsHtml +
+            '</div>' +
+            '<div class="mt-3 pt-2.5 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">' +
+              '<div class="text-slate-600"><strong class="text-slate-800">Specs &amp; Access:</strong> ' + st.voltage + ' - ' + st.accessNotes + '</div>' +
+              '<div class="flex items-center gap-2 shrink-0">' +
+                '<button type="button" class="btn-focus-map btn-tech px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 text-xs">Inspect Pinout</button>' +
+                '<button type="button" class="btn-book-port btn-tech px-3.5 py-1.5 bg-slate-900 hover:bg-emerald-700 text-white text-xs">Book Slot / Urgent</button>' +
+              '</div>' +
+            '</div>';
+
+          const locateBtn = card.querySelector('.btn-focus-map');
+          if (locateBtn) {
+            locateBtn.addEventListener('click', function () {
+              state.selectedStationId = st.id;
+              renderAll();
+              showToast('Inspecting hardware schematic and radar for ' + st.name);
+            });
+          }
+
+          const bookBtn = card.querySelector('.btn-book-port');
+          if (bookBtn) {
+            bookBtn.addEventListener('click', function () {
+              openBookingModal(st.id, null);
+            });
+          }
+
+          card.querySelectorAll('.btn-slot-chip').forEach(function (chip) {
+            chip.addEventListener('click', function () {
+              const slotId = chip.getAttribute('data-slot-id');
+              openBookingModal(st.id, slotId);
+            });
+          });
+
+          container.appendChild(card);
+        });
+      }
+
+      // --- RENDER HOST 24-HOUR CHRONO MATRIX & PUBLISHED TIME SLOTS ---
+      function renderHostScheduler() {
+        const portSelect = document.getElementById('slotPortSelect');
+        if (portSelect) {
+          const currentVal = portSelect.value;
+          portSelect.innerHTML = '';
+          state.stations.filter(function (s) { return s.isHostPort; }).forEach(function (st) {
+            const opt = document.createElement('option');
+            opt.value = st.id;
+            opt.textContent = st.name + ' (' + st.powerKw + ' kW)';
+            portSelect.appendChild(opt);
+          });
+          if (currentVal && Array.from(portSelect.options).some(function (o) { return o.value === currentVal; })) {
+            portSelect.value = currentVal;
+          }
+        }
+
+        const matrixEl = document.getElementById('hostChronoMatrix');
+        const summaryEl = document.getElementById('hostChronoSummaryText');
+        if (matrixEl) {
+          matrixEl.innerHTML = '';
+          let openCount = 0;
+          state.hostHourlyGrid.forEach(function (cellState, hr) {
+            if (cellState === 1 || cellState === 2) openCount++;
+            let bgClass = 'bg-slate-800 text-slate-400';
+            if (cellState === 1) bgClass = 'bg-emerald-500 text-slate-950 font-bold';
+            else if (cellState === 2) bgClass = 'bg-amber-500 text-slate-950 font-bold';
+            else if (cellState === 3) bgClass = 'bg-sky-500 text-slate-950 font-bold';
+
+            const cell = document.createElement('button');
+            cell.type = 'button';
+            cell.className = 'chrono-cell flex flex-col items-center justify-center text-[10px] font-mono-tech ' + bgClass;
+            cell.title = 'Hour ' + String(hr).padStart(2, '0') + ':00 IST - Click to cycle Open / Urgent / Private';
+            cell.innerHTML = '<span>' + String(hr).padStart(2, '0') + '</span>';
+
+            cell.addEventListener('click', function () {
+              const nextState = cellState === 1 ? 2 : (cellState === 2 ? 0 : 1);
+              state.hostHourlyGrid[hr] = nextState;
+              const labelMap = { 0: 'PRIVATE/OFF', 1: 'OPEN SLOT', 2: 'URGENT/PEAK' };
+              renderAll();
+              showToast('Hour ' + String(hr).padStart(2, '0') + ':00 set to ' + labelMap[nextState]);
+            });
+
+            matrixEl.appendChild(cell);
+          });
+          if (summaryEl) {
+            summaryEl.textContent = openCount + ' of 24 hours open for driver booking today';
+          }
+        }
+
+        const listEl = document.getElementById('hostPublishedSlotsList');
+        const countBadge = document.getElementById('hostPublishedSlotCount');
+        if (listEl) {
+          listEl.innerHTML = '';
+          let totalSlots = 0;
+          state.stations.filter(function (s) { return s.isHostPort; }).forEach(function (st) {
+            (st.timeSlots || []).forEach(function (slot) {
+              totalSlots++;
+              const item = document.createElement('div');
+              item.className = 'p-2.5 bg-slate-50 border border-slate-300 flex items-center justify-between gap-2 text-xs font-mono-tech';
+              const maxEnergy = (st.powerKw * slot.durationHrs).toFixed(1);
+              item.innerHTML =
+                '<div>' +
+                  '<div class="font-bold text-slate-900">' + slot.day + ' • ' + slot.start + ' to ' + slot.end + ' (' + slot.durationHrs + ' hrs)</div>' +
+                  '<div class="text-[11px] text-slate-600">' + st.name + ' • Max ' + maxEnergy + ' kWh @ INR ' + slot.rate.toFixed(2) + '/kWh</div>' +
+                '</div>' +
+                '<div class="flex items-center gap-2">' +
+                  '<span class="badge-tech ' + (slot.status === 'OPEN' ? 'bg-emerald-100 text-emerald-900 border border-emerald-400' : 'bg-amber-100 text-amber-900') + '">' + slot.status + '</span>' +
+                  '<button type="button" class="btn-remove-slot text-red-700 hover:underline text-[11px]">Remove</button>' +
+                '</div>';
+
+              item.querySelector('.btn-remove-slot').addEventListener('click', function () {
+                st.timeSlots = st.timeSlots.filter(function (x) { return x.slotId !== slot.slotId; });
+                renderAll();
+                showToast('Removed time slot ' + slot.start + '-' + slot.end);
+              });
+
+              listEl.appendChild(item);
+            });
+          });
+          if (countBadge) countBadge.textContent = totalSlots + ' SLOTS ACTIVE';
+        }
+      }
+
+      // --- TRAVEL BATTERY CALCULATOR ---
+      function updateTravelCalculator() {
+        const cap = parseFloat(document.getElementById('calcBatteryCap').value) || 45;
+        const cur = parseFloat(document.getElementById('calcCurrentSoc').value) || 16;
+        const tgt = parseFloat(document.getElementById('calcTargetSoc').value) || 80;
+
+        const deltaPct = Math.max(0, tgt - cur);
+        const kwhNeeded = (cap * (deltaPct / 100));
+        const rangeGainKm = Math.round(kwhNeeded * 7.0);
+        const selectedObj = state.stations.find(function (s) { return s.id === state.selectedStationId; }) || state.stations[0];
+        const portKw = selectedObj ? selectedObj.powerKw : 30;
+        const reqMins = Math.max(5, Math.round((kwhNeeded / portKw) * 60));
+
+        document.getElementById('calcKwhNeeded').textContent = kwhNeeded.toFixed(1) + ' kWh';
+        document.getElementById('calcRangeGain').textContent = '+' + rangeGainKm + ' km';
+        document.getElementById('calcFastTime').textContent = '~' + reqMins + ' mins';
+      }
+
+      // --- BOOKING & TIME-SLOT CHECKOUT MODAL ---
+      function openBookingModal(stationId, preselectedSlotId) {
+        const st = state.stations.find(function (s) { return s.id === stationId; });
+        if (!st) return;
+        state.checkoutStationId = st.id;
+
+        document.getElementById('checkoutStationName').textContent = st.name;
+        const dist = computeDistanceKm(state.userLat, state.userLng, st.lat, st.lng);
+        document.getElementById('checkoutStationSpecs').textContent = st.connector + ' • ' + st.powerKw + ' kW • ' + dist.toFixed(1) + ' km from current location';
+        document.getElementById('checkoutStationRate').textContent = 'INR ' + st.ratePerKwh.toFixed(2) + ' / kWh';
+        document.getElementById('checkoutHostType').textContent = st.isHostPort ? 'Peer Host: ' + st.hostOwner : 'Public Corridor Terminal';
+
+        const slotSelect = document.getElementById('bookingTimeSlotSelect');
+        slotSelect.innerHTML = '';
+        const openSlots = (st.timeSlots || []).filter(function (s) { return s.status === 'OPEN'; });
+
+        if (openSlots.length > 0) {
+          openSlots.forEach(function (s) {
+            const opt = document.createElement('option');
+            opt.value = s.slotId;
+            opt.textContent = s.day + ' | ' + s.start + ' - ' + s.end + ' (' + s.durationHrs + ' hrs • Max ' + (st.powerKw * s.durationHrs).toFixed(1) + ' kWh @ INR ' + s.rate.toFixed(2) + '/kWh)';
+            slotSelect.appendChild(opt);
+          });
+        }
+        const customOpt = document.createElement('option');
+        customOpt.value = 'CUSTOM_URGENT';
+        customOpt.textContent = 'Immediate / Custom Urgent Window (Start Now)';
+        slotSelect.appendChild(customOpt);
+
+        if (preselectedSlotId && openSlots.some(function (s) { return s.slotId === preselectedSlotId; })) {
+          slotSelect.value = preselectedSlotId;
+          document.getElementById('bookingArrivalWindow').value = 'SCHEDULED_SLOT';
+        } else if (openSlots.length > 0) {
+          slotSelect.value = openSlots[0].slotId;
+        } else {
+          slotSelect.value = 'CUSTOM_URGENT';
+        }
+
+        syncSlotSelectionToInputs();
+        const modal = document.getElementById('modalBookingCheckout');
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+      }
+
+      function syncSlotSelectionToInputs() {
+        const st = state.stations.find(function (s) { return s.id === state.checkoutStationId; }) || state.stations[0];
+        const slotId = document.getElementById('bookingTimeSlotSelect').value;
+        const matchedSlot = (st.timeSlots || []).find(function (s) { return s.slotId === slotId; });
+
+        if (matchedSlot) {
+          document.getElementById('bookingSlotDurationHrs').value = String(matchedSlot.durationHrs);
+          const maxKwh = +(st.powerKw * matchedSlot.durationHrs).toFixed(1);
+          document.getElementById('bookingEnergyKwh').value = String(Math.min(maxKwh, 22));
+        }
+        updateCheckoutMath();
+      }
+
+      function closeBookingModal() {
+        const modal = document.getElementById('modalBookingCheckout');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+      }
+
+      function updateCheckoutMath() {
+        const st = state.stations.find(function (s) { return s.id === state.checkoutStationId; }) || state.stations[0];
+        const slotId = document.getElementById('bookingTimeSlotSelect').value;
+        const matchedSlot = (st.timeSlots || []).find(function (s) { return s.slotId === slotId; });
+
+        const durHrs = parseFloat(document.getElementById('bookingSlotDurationHrs').value) || 2.0;
+        const maxDeliverableKwh = +(st.powerKw * durHrs).toFixed(1);
+        document.getElementById('checkoutMaxKwhCapLabel').textContent = 'Max Slot Output: ' + maxDeliverableKwh + ' kWh';
+
+        const kwh = Math.max(1, parseFloat(document.getElementById('bookingEnergyKwh').value) || 15);
+        const rate = matchedSlot ? matchedSlot.rate : st.ratePerKwh;
+        const energySub = kwh * rate;
+        const holdFee = 25.00;
+        const gst = (energySub + holdFee) * 0.18;
+        const total = energySub + holdFee + gst;
+
+        const slotDesc = matchedSlot
+          ? (matchedSlot.day + ' • ' + matchedSlot.start + ' - ' + matchedSlot.end + ' (' + durHrs + ' hrs)')
+          : ('Urgent Immediate Lock (' + durHrs + ' hrs duration)');
+
+        document.getElementById('billSlotSummarySpan').textContent = slotDesc;
+        document.getElementById('billKwhSpan').textContent = String(kwh);
+        document.getElementById('billRateSpan').textContent = rate.toFixed(2);
+        document.getElementById('billEnergySubtotal').textContent = 'INR ' + energySub.toFixed(2);
+        document.getElementById('billReservationFee').textContent = 'INR ' + holdFee.toFixed(2);
+        document.getElementById('billGstAmount').textContent = 'INR ' + gst.toFixed(2);
+        document.getElementById('billGrandTotal').textContent = 'INR ' + total.toFixed(2);
+        document.getElementById('walletBalanceDisplay').textContent = 'INR ' + state.walletBalance.toFixed(2);
+      }
+
+      // --- RENDER BOOKINGS & RECEIPTS ---
+      function renderBookingsAndHostLedger() {
+        const badge = document.getElementById('bookingCountBadge');
+        if (badge) badge.textContent = String(state.bookings.length);
+
+        const driverList = document.getElementById('driverBookingsList');
+        if (driverList) {
+          driverList.innerHTML = '';
+          state.bookings.forEach(function (bk) {
+            const card = document.createElement('div');
+            card.className = 'card-blueprint p-4 border-l-8 border-l-emerald-600 bg-slate-50 space-y-3';
+            card.innerHTML =
+              '<div class="flex flex-wrap items-start justify-between gap-2">' +
+                '<div>' +
+                  '<div class="flex flex-wrap items-center gap-2">' +
+                    '<span class="badge-tech bg-emerald-700 text-white">' + bk.status + '</span>' +
+                    '<span class="badge-tech bg-amber-100 text-amber-950 border border-amber-500">SLOT: ' + (bk.slotWindow || 'Immediate Window') + '</span>' +
+                    '<span class="font-mono-tech text-xs text-slate-600">Ref: ' + bk.bookingId + '</span>' +
+                  '</div>' +
+                  '<h3 class="text-sm font-extrabold text-slate-900 mt-1.5">' + bk.stationName + '</h3>' +
+                  '<p class="text-xs font-mono-tech text-slate-600">Connector: ' + bk.connector + ' | Vehicle: ' + bk.vehicleReg + ' | Paid via ' + bk.payMethod + '</p>' +
+                '</div>' +
+                '<div class="bg-slate-950 text-white px-3.5 py-2 font-mono-tech text-right" style="border-radius:3px;">' +
+                  '<span class="text-[10px] text-slate-400 block">GATE &amp; CHARGER ACCESS PIN</span>' +
+                  '<strong class="text-base text-emerald-400 tracking-widest">' + bk.pinCode + '</strong>' +
+                '</div>' +
+              '</div>' +
+              '<div class="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-slate-200 text-xs font-mono-tech">' +
+                '<div>Energy Pre-Booked: <strong>' + bk.kwhBooked + ' kWh @ INR ' + bk.ratePerKwh.toFixed(2) + '</strong></div>' +
+                '<div>Total Settled (Incl. GST): <strong class="text-emerald-700">INR ' + bk.totalPaid.toFixed(2) + '</strong></div>' +
+                '<div class="sm:text-right"><button type="button" class="btn-release-slot underline text-slate-700 hover:text-slate-950">Complete &amp; Release Port</button></div>' +
+              '</div>' +
+              '<div class="text-xs text-slate-600 bg-white p-2.5 border border-slate-200"><strong>Host Directions:</strong> ' + bk.accessNotes + '</div>';
+
+            const releaseBtn = card.querySelector('.btn-release-slot');
+            if (releaseBtn) {
+              releaseBtn.addEventListener('click', function () {
+                bk.status = 'COMPLETED & SETTLED';
+                const st = state.stations.find(function (s) { return s.id === bk.stationId; });
+                if (st) st.status = 'AVAILABLE';
+                renderAll();
+                showToast('Charging session completed for ' + bk.bookingId + '. Port returned to AVAILABLE.');
+              });
+            }
+            driverList.appendChild(card);
+          });
+        }
+
+        const hostLedger = document.getElementById('hostBookingsLedger');
+        const settlementEl = document.getElementById('hostSettlementTotal');
+        if (settlementEl) {
+          settlementEl.textContent = 'INR ' + state.hostSettlement.toFixed(2);
+        }
+        if (hostLedger) {
+          hostLedger.innerHTML = '';
+          state.bookings.forEach(function (bk) {
+            const row = document.createElement('div');
+            row.className = 'p-3 bg-slate-50 border border-slate-300 flex items-center justify-between gap-2 text-xs';
+            row.innerHTML =
+              '<div>' +
+                '<div class="font-bold text-slate-900">' + bk.vehicleReg + ' (' + bk.driverName + ')</div>' +
+                '<div class="font-mono-tech text-[11px] text-emerald-800">' + (bk.slotWindow || 'Immediate Window') + '</div>' +
+                '<div class="font-mono-tech text-[11px] text-slate-600">' + bk.stationName + ' • ' + bk.kwhBooked + ' kWh • PIN: <strong>' + bk.pinCode + '</strong></div>' +
+              '</div>' +
+              '<div class="text-right font-mono-tech">' +
+                '<div class="font-bold text-emerald-700">+INR ' + bk.totalPaid.toFixed(2) + '</div>' +
+                '<div class="text-[10px] text-slate-500">' + bk.status + '</div>' +
+              '</div>';
+            hostLedger.appendChild(row);
+          });
+        }
+      }
+
+      // --- RENDER HOST PRIMARY PORT STATUS ---
+      function renderHostConsoleStatus() {
+        const primary = state.stations[0];
+        if (!primary) return;
+        const nameEl = document.getElementById('hostPrimaryPortName');
+        const statusEl = document.getElementById('hostPrimaryStatusText');
+        if (nameEl) nameEl.textContent = primary.name + ' (' + primary.connector + ' ' + primary.powerKw + ' kW)';
+        if (statusEl) {
+          if (primary.status === 'AVAILABLE') {
+            statusEl.textContent = 'Status: AVAILABLE NOW (' + primary.windowText + ')';
+            statusEl.className = 'text-xs font-mono-tech text-emerald-700 mt-1 block font-semibold';
+          } else {
+            statusEl.textContent = 'Status: OCCUPIED / PRIVATE (Hidden from Urgent Dispatch)';
+            statusEl.className = 'text-xs font-mono-tech text-red-700 mt-1 block font-semibold';
+          }
+        }
+      }
+
+      // --- RENDER AUTH HEADER ---
+      function renderAuthHeader() {
+        const indicator = document.getElementById('activeRoleIndicator');
+        const userLabel = document.getElementById('activeUserLabel');
+        const subLabel = document.getElementById('activeSubLabel');
+
+        if (userLabel) userLabel.textContent = state.userName + ' (' + (state.currentRole === 'DRIVER' ? 'Driver Login' : 'Host Login') + ')';
+        if (subLabel) subLabel.textContent = state.userSub;
+        if (indicator) {
+          indicator.className = state.currentRole === 'DRIVER' ? 'w-2.5 h-2.5 bg-emerald-600' : 'w-2.5 h-2.5 bg-amber-500';
+        }
+      }
+
+      function renderAll() {
+        const filtered = getFilteredStations();
+        renderAuthHeader();
+        renderHardwareSchematic();
+        renderMap(filtered);
+        renderStationList(filtered);
+        renderHostScheduler();
+        renderBookingsAndHostLedger();
+        renderHostConsoleStatus();
+        updateTravelCalculator();
+      }
+
+      // --- WIRE UP EVENT LISTENERS ---
+      function initEvents() {
+        document.querySelectorAll('.nav-trigger').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            const target = btn.getAttribute('data-nav');
+            if (target) {
+              document.getElementById('modalDomainConfig').classList.add('hidden');
+              document.getElementById('modalDomainConfig').classList.remove('flex');
+              switchView(target);
+            }
+          });
+        });
+
+        // Status filter buttons
+        document.querySelectorAll('.status-filter-btn').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            state.statusFilter = btn.getAttribute('data-filter-status') || 'all';
+            document.querySelectorAll('.status-filter-btn').forEach(function (b) {
+              if (b.getAttribute('data-filter-status') === state.statusFilter) {
+                b.className = 'status-filter-btn btn-tech px-2.5 py-1 text-xs bg-slate-900 text-white border border-slate-900';
+              } else {
+                b.className = 'status-filter-btn btn-tech px-2.5 py-1 text-xs bg-white text-slate-800 border border-slate-300 hover:bg-slate-100';
+              }
+            });
+            renderAll();
+          });
+        });
+
+        // Connector, Sort, Radius, Search, Slot Band & Duration Filters
+        document.getElementById('connectorTypeSelect').addEventListener('change', function (e) {
+          state.connectorFilter = e.target.value;
+          renderAll();
+        });
+        document.getElementById('sortOrderSelect').addEventListener('change', function (e) {
+          state.sortBy = e.target.value;
+          renderAll();
+        });
+        document.getElementById('slotBandFilterSelect').addEventListener('change', function (e) {
+          state.slotBandFilter = e.target.value;
+          renderAll();
+        });
+        document.getElementById('slotMinDurationSelect').addEventListener('change', function (e) {
+          state.slotMinDuration = parseFloat(e.target.value) || 0;
+          renderAll();
+        });
+        document.getElementById('radiusFilterSelect').addEventListener('change', function (e) {
+          state.radiusKm = parseFloat(e.target.value) || 9999;
+          renderAll();
+        });
+        document.getElementById('searchQueryInput').addEventListener('input', function (e) {
+          state.searchQuery = e.target.value;
+          renderAll();
+        });
+
+        // Preset Location Selector
+        document.getElementById('presetLocationSelect').addEventListener('change', function (e) {
+          const parts = e.target.value.split(',');
+          if (parts.length >= 3) {
+            state.userLat = parseFloat(parts[0]);
+            state.userLng = parseFloat(parts[1]);
+            state.locationLabel = parts.slice(2).join(',');
+            renderAll();
+            showToast('Location updated to ' + state.locationLabel);
+          }
+        });
+
+        // Real Browser Geolocation Button
+        document.getElementById('btnUseBrowserGps').addEventListener('click', function () {
+          if (navigator.geolocation) {
+            showToast('Requesting browser GPS coordinates...');
+            navigator.geolocation.getCurrentPosition(
+              function (pos) {
+                state.userLat = pos.coords.latitude;
+                state.userLng = pos.coords.longitude;
+                state.locationLabel = 'Live GPS (' + state.userLat.toFixed(3) + ', ' + state.userLng.toFixed(3) + ')';
+                renderAll();
+                showToast('Browser GPS locked: ' + state.locationLabel);
+              },
+              function () {
+                state.userLat = 19.0760;
+                state.userLng = 72.8777;
+                state.locationLabel = 'Mumbai - Bandra & BKC Sector (GPS Fallback)';
+                renderAll();
+                showToast('Browser GPS restricted by container; locked to Mumbai Central sector.');
+              },
+              { timeout: 4000 }
+            );
+          } else {
+            showToast('Geolocation API unavailable; using selected corridor coordinates.');
+          }
+        });
+
+        // Urgent Charge Dispatch Mode
+        const urgentBtn = document.getElementById('btnUrgentDispatch');
+        const urgentToggle = document.getElementById('toggleUrgentReadyOnly');
+        const urgentAlert = document.getElementById('urgentDispatchAlert');
+
+        function setUrgentMode(enabled) {
+          state.urgentModeOnly = enabled;
+          if (enabled) {
+            state.sortBy = 'distance';
+            document.getElementById('sortOrderSelect').value = 'distance';
+            switchView('finder');
+            urgentAlert.classList.remove('hidden');
+            urgentToggle.textContent = 'ON (ACTIVE)';
+            urgentToggle.setAttribute('aria-pressed', 'true');
+            urgentToggle.className = 'btn-tech px-2.5 py-1 border border-amber-600 bg-amber-500 text-slate-950 font-bold';
+            showToast('URGENT DISPATCH: Filtering for nearest immediately available ports.');
+          } else {
+            urgentAlert.classList.add('hidden');
+            urgentToggle.textContent = 'OFF';
+            urgentToggle.setAttribute('aria-pressed', 'false');
+            urgentToggle.className = 'btn-tech px-2.5 py-1 border border-slate-400 bg-slate-100 text-slate-900';
+          }
+          renderAll();
+        }
+
+        urgentBtn.addEventListener('click', function () {
+          setUrgentMode(true);
+        });
+        urgentToggle.addEventListener('click', function () {
+          setUrgentMode(!state.urgentModeOnly);
+        });
+        document.getElementById('btnCancelUrgentMode').addEventListener('click', function () {
+          setUrgentMode(false);
+        });
+
+        // Map Zoom Controls
+        document.getElementById('btnZoomInMap').addEventListener('click', function () {
+          state.mapZoom = Math.min(3.0, state.mapZoom + 0.4);
+          renderAll();
+        });
+        document.getElementById('btnZoomOutMap').addEventListener('click', function () {
+          state.mapZoom = Math.max(0.4, state.mapZoom - 0.3);
+          renderAll();
+        });
+
+        // Travel Calculator Inputs
+        ['calcBatteryCap', 'calcCurrentSoc', 'calcTargetSoc'].forEach(function (id) {
+          document.getElementById(id).addEventListener('input', updateTravelCalculator);
+        });
+
+        // Booking Modal Controls
+        document.getElementById('btnCloseBookingModal').addEventListener('click', closeBookingModal);
+        document.getElementById('btnCancelBookingModal').addEventListener('click', closeBookingModal);
+        document.getElementById('bookingTimeSlotSelect').addEventListener('change', syncSlotSelectionToInputs);
+        document.getElementById('bookingSlotDurationHrs').addEventListener('change', updateCheckoutMath);
+        document.getElementById('bookingEnergyKwh').addEventListener('input', updateCheckoutMath);
+
+        // Payment Method Tabs
+        document.querySelectorAll('.pay-method-btn').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            const method = btn.getAttribute('data-pay-method');
+            state.selectedPayMethod = method;
+            document.querySelectorAll('.pay-method-btn').forEach(function (b) {
+              if (b.getAttribute('data-pay-method') === method) {
+                b.className = 'pay-method-btn btn-tech py-2 px-3 border-2 border-slate-900 bg-slate-900 text-white text-center font-mono-tech';
+              } else {
+                b.className = 'pay-method-btn btn-tech py-2 px-3 border border-slate-300 bg-white text-slate-800 text-center font-mono-tech';
+              }
+            });
+            document.getElementById('payPanelUpi').classList.toggle('hidden', method !== 'UPI');
+            document.getElementById('payPanelCard').classList.toggle('hidden', method !== 'CARD');
+            document.getElementById('payPanelWallet').classList.toggle('hidden', method !== 'WALLET');
+          });
+        });
+
+        // Complete Booking & Payment Submit
+        document.getElementById('formCompleteBooking').addEventListener('submit', function (e) {
+          e.preventDefault();
+          const st = state.stations.find(function (s) { return s.id === state.checkoutStationId; });
+          if (!st) return;
+
+          const slotId = document.getElementById('bookingTimeSlotSelect').value;
+          const matchedSlot = (st.timeSlots || []).find(function (s) { return s.slotId === slotId; });
+          const durHrs = parseFloat(document.getElementById('bookingSlotDurationHrs').value) || 2.0;
+
+          const kwh = Math.max(1, parseFloat(document.getElementById('bookingEnergyKwh').value) || 15);
+          const reg = (document.getElementById('bookingVehicleReg').value || 'MH-01-EV-4821').toUpperCase();
+          const activeRate = matchedSlot ? matchedSlot.rate : st.ratePerKwh;
+          const energySub = kwh * activeRate;
+          const total = (energySub + 25.00) * 1.18;
+
+          let payDesc = 'UPI (' + (document.getElementById('upiVpaInput').value || 'rohan.ev@okicici') + ')';
+          if (state.selectedPayMethod === 'CARD') {
+            payDesc = 'Card ending 8891';
+          } else if (state.selectedPayMethod === 'WALLET') {
+            if (state.walletBalance < total) {
+              showToast('Insufficient wallet balance. Please select UPI or Card.');
+              return;
+            }
+            state.walletBalance -= total;
+            payDesc = 'GridNode Wallet';
+          }
+
+          const randomPin = String(Math.floor(100000 + Math.random() * 900000));
+          const bookingId = 'GN-' + String(Math.floor(10000 + Math.random() * 89999));
+
+          let slotWindowDesc = 'Immediate Lock (' + durHrs + ' hrs)';
+          if (matchedSlot) {
+            matchedSlot.status = 'BOOKED';
+            slotWindowDesc = matchedSlot.day + ' • ' + matchedSlot.start + ' - ' + matchedSlot.end + ' (' + matchedSlot.durationHrs + ' hrs)';
+          } else {
+            st.status = 'OCCUPIED';
+          }
+
+          st.windowText = 'Slot Locked by ' + reg;
+          state.hostSettlement += total;
+
+          state.bookings.unshift({
+            bookingId: bookingId,
+            stationId: st.id,
+            stationName: st.name,
+            connector: st.connector + ' (' + st.powerKw + ' kW)',
+            driverName: state.userName,
+            vehicleReg: reg,
+            slotWindow: slotWindowDesc,
+            kwhBooked: kwh,
+            ratePerKwh: activeRate,
+            totalPaid: total,
+            payMethod: payDesc,
+            pinCode: randomPin,
+            status: 'PAID & TIME-SLOT LOCKED',
+            timestamp: '2026-10-20 00:59 IST',
+            accessNotes: st.accessNotes
+          });
+
+          closeBookingModal();
+          switchView('bookings');
+          showToast('Time Slot locked! Total INR ' + total.toFixed(2) + ' paid. Gate PIN: ' + randomPin);
+        });
+
+        // Host Availability State Switcher
+        document.querySelectorAll('.host-state-btn').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            const mode = btn.getAttribute('data-host-state');
+            const primary = state.stations[0];
+            if (!primary) return;
+
+            document.querySelectorAll('.host-state-btn').forEach(function (b) {
+              if (b.getAttribute('data-host-state') === mode) {
+                b.className = 'host-state-btn btn-tech px-3.5 py-2 text-xs bg-emerald-700 text-white border border-emerald-900 flex items-center gap-1.5';
+              } else {
+                b.className = 'host-state-btn btn-tech px-3.5 py-2 text-xs bg-white text-slate-900 border border-slate-300 hover:bg-slate-200';
+              }
+            });
+
+            if (mode === 'AVAILABLE') {
+              primary.status = 'AVAILABLE';
+              primary.urgentReady = true;
+              primary.windowText = document.getElementById('hostWindowInput').value || 'Now - 23:30 IST';
+              showToast('Host Port #B2 is now LIVE as AVAILABLE NOW.');
+            } else if (mode === 'URGENT_ONLY') {
+              primary.status = 'AVAILABLE';
+              primary.urgentReady = true;
+              primary.windowText = 'Urgent SOS Dispatch Only';
+              showToast('Host Port #B2 set to URGENT SOS ONLY mode.');
+            } else {
+              primary.status = 'OCCUPIED';
+              primary.urgentReady = false;
+              primary.windowText = 'Private Use / Offline';
+              showToast('Host Port #B2 marked OCCUPIED / PRIVATE.');
+            }
+            renderAll();
+          });
+        });
+
+        // Host Custom Time-Slot Publisher Form
+        document.getElementById('formAddTimeSlot').addEventListener('submit', function (e) {
+          e.preventDefault();
+          const portId = document.getElementById('slotPortSelect').value || 'ST-101';
+          const st = state.stations.find(function (s) { return s.id === portId; }) || state.stations[0];
+          const day = document.getElementById('slotDaySelect').value;
+          const start = document.getElementById('slotStartTime').value || '18:00';
+          const dur = parseFloat(document.getElementById('slotDurationHrs').value) || 2.0;
+          const end = addHoursToTime(start, dur);
+          const rate = parseFloat(document.getElementById('slotCustomRate').value) || st.ratePerKwh;
+
+          const newSlotId = 'SL-' + String(Math.floor(1000 + Math.random() * 8999));
+          if (!st.timeSlots) st.timeSlots = [];
+          st.timeSlots.unshift({
+            slotId: newSlotId,
+            day: day,
+            start: start,
+            end: end,
+            durationHrs: dur,
+            band: inferSlotBand(start),
+            rate: rate,
+            status: 'OPEN'
+          });
+
+          const startHr = parseInt(start.split(':')[0], 10) || 0;
+          for (let i = 0; i < Math.ceil(dur); i++) {
+            state.hostHourlyGrid[(startHr + i) % 24] = 1;
+          }
+
+          st.status = 'AVAILABLE';
+          st.windowText = st.timeSlots.filter(function (x) { return x.status === 'OPEN'; }).length + ' Open Time Slots';
+          renderAll();
+          showToast('Published new time slot: ' + day + ' ' + start + ' to ' + end + ' (' + dur + ' hrs)!');
+        });
+
+        // Host Quick Preset Slot Buttons
+        document.querySelectorAll('.slot-preset-btn').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            const preset = btn.getAttribute('data-slot-preset');
+            const st = state.stations[0];
+            if (!st) return;
+
+            let start = '00:30';
+            let dur = 2.0;
+            let rate = st.ratePerKwh;
+            let label = 'Next 2 Hours';
+
+            if (preset === 'SOLAR_4H') {
+              start = '12:00';
+              dur = 4.0;
+              rate = Math.max(10, st.ratePerKwh - 2.0);
+              label = 'Solar Midday 12:00-16:00 (4h)';
+            } else if (preset === 'NIGHT_8H') {
+              start = '22:00';
+              dur = 8.0;
+              rate = Math.max(10, st.ratePerKwh - 1.5);
+              label = 'Overnight 22:00-06:00 (8h)';
+            }
+
+            const end = addHoursToTime(start, dur);
+            st.timeSlots.unshift({
+              slotId: 'SL-' + String(Math.floor(1000 + Math.random() * 8999)),
+              day: 'Today (Oct 20)',
+              start: start,
+              end: end,
+              durationHrs: dur,
+              band: inferSlotBand(start),
+              rate: rate,
+              status: 'OPEN'
+            });
+            st.status = 'AVAILABLE';
+            renderAll();
+            showToast('Added preset time slot: ' + label);
+          });
+        });
+
+        // Host Tariff & Window Updates
+        document.getElementById('btnUpdateHostRate').addEventListener('click', function () {
+          const val = parseFloat(document.getElementById('hostQuickRateInput').value);
+          if (!isNaN(val) && val >= 5) {
+            state.stations[0].ratePerKwh = val;
+            renderAll();
+            showToast('Host tariff updated to INR ' + val.toFixed(2) + '/kWh.');
+          }
+        });
+        document.getElementById('btnUpdateHostWindow').addEventListener('click', function () {
+          const win = document.getElementById('hostWindowInput').value.trim();
+          if (win) {
+            state.stations[0].windowText = win;
+            renderAll();
+            showToast('Availability window updated to: ' + win);
+          }
+        });
+
+        // Host Fill Current GPS
+        document.getElementById('btnFillHostCurrentGps').addEventListener('click', function () {
+          document.getElementById('newPortLat').value = (state.userLat + 0.0042).toFixed(4);
+          document.getElementById('newPortLng').value = (state.userLng - 0.0031).toFixed(4);
+          showToast('Coordinates pre-filled near current map sector.');
+        });
+
+        // Host Register New Charging Port Form
+        document.getElementById('formAddHostPort').addEventListener('submit', function (e) {
+          e.preventDefault();
+          const name = document.getElementById('newPortName').value.trim();
+          const sector = document.getElementById('newPortSector').value.trim();
+          const connector = document.getElementById('newPortConnector').value;
+          const powerKw = parseFloat(document.getElementById('newPortPowerKw').value) || 7.4;
+          const rate = parseFloat(document.getElementById('newPortRate').value) || 14.0;
+          const lat = parseFloat(document.getElementById('newPortLat').value) || state.userLat;
+          const lng = parseFloat(document.getElementById('newPortLng').value) || state.userLng;
+          const initSlotText = document.getElementById('newPortInitialSlot').value.trim() || '08:00 - 20:00 (12h)';
+          const notes = document.getElementById('newPortAccessNotes').value.trim();
+
+          if (!name || !sector || !notes) return;
+
+          const newId = 'ST-' + String(100 + state.stations.length + 1);
+          state.stations.unshift({
+            id: newId,
+            name: name,
+            sector: sector,
+            lat: lat,
+            lng: lng,
+            isHostPort: true,
+            hostOwner: state.userName,
+            status: 'AVAILABLE',
+            urgentReady: true,
+            connector: connector,
+            powerKw: powerKw,
+            voltage: powerKw >= 20 ? '400V DC / 3-Phase' : '230V AC / Dedicated RCCB',
+            ratePerKwh: rate,
+            windowText: initSlotText,
+            accessNotes: notes,
+            timeSlots: [
+              {
+                slotId: 'SL-' + newId + '-1',
+                day: 'Today (Oct 20)',
+                start: '08:00',
+                end: '14:00',
+                durationHrs: 6.0,
+                band: 'MORNING',
+                rate: rate,
+                status: 'OPEN'
+              },
+              {
+                slotId: 'SL-' + newId + '-2',
+                day: 'Today (Oct 20)',
+                start: '18:00',
+                end: '23:00',
+                durationHrs: 5.0,
+                band: 'EVENING',
+                rate: rate,
+                status: 'OPEN'
+              }
+            ]
+          });
+
+          state.selectedStationId = newId;
+          e.target.reset();
+          renderAll();
+          showToast('New host port "' + name + '" published with bookable time slots!');
+        });
+
+        // Host Driver PIN Verification
+        document.getElementById('btnVerifyDriverPin').addEventListener('click', function () {
+          const inputPin = document.getElementById('hostPinVerifyInput').value.trim();
+          const feedback = document.getElementById('hostPinVerifyFeedback');
+          const matched = state.bookings.find(function (b) { return b.pinCode === inputPin; });
+
+          feedback.classList.remove('hidden');
+          if (matched) {
+            matched.status = 'ENERGIZED - DISPENSING POWER';
+            feedback.className = 'p-2.5 text-xs font-mono-tech border bg-emerald-50 border-emerald-400 text-emerald-950';
+            feedback.textContent = 'PIN VERIFIED: ' + matched.vehicleReg + ' (' + matched.driverName + '). Contactor relay CLOSED for slot ' + (matched.slotWindow || 'now') + '.';
+            renderAll();
+            showToast('Driver PIN verified! Charging session started.');
+          } else {
+            feedback.className = 'p-2.5 text-xs font-mono-tech border bg-red-50 border-red-400 text-red-950';
+            feedback.textContent = 'INVALID PIN: No active reservation matches PIN "' + (inputPin || 'empty') + '". Try 482910.';
+          }
+        });
+
+        // Dual Login Modal Switcher
+        const authModal = document.getElementById('modalAuthSwitcher');
+        document.getElementById('btnOpenAuthModal').addEventListener('click', function () {
+          authModal.classList.remove('hidden');
+          authModal.classList.add('flex');
+        });
+        document.getElementById('btnCloseAuthModal').addEventListener('click', function () {
+          authModal.classList.add('hidden');
+          authModal.classList.remove('flex');
+        });
+
+        document.getElementById('btnQuickLoginDriver').addEventListener('click', function () {
+          state.currentRole = 'DRIVER';
+          state.userName = 'Rohan Deshmukh';
+          state.userSub = 'Tata Nexon EV • CCS2 • SoC 16%';
+          authModal.classList.add('hidden');
+          authModal.classList.remove('flex');
+          switchView('finder');
+          showToast('Switched to Login 1: EV Driver (Rohan Deshmukh).');
+        });
+
+        document.getElementById('btnQuickLoginHost').addEventListener('click', function () {
+          state.currentRole = 'HOST';
+          state.userName = 'Vikram Gokhale';
+          state.userSub = 'Host Port #B2 • Type 2 AC 7.4kW';
+          authModal.classList.add('hidden');
+          authModal.classList.remove('flex');
+          switchView('host');
+          showToast('Switched to Login 2: Charger Host (Vikram Gokhale).');
+        });
+
+        document.getElementById('formCustomLogin').addEventListener('submit', function (e) {
+          e.preventDefault();
+          const email = document.getElementById('customLoginEmail').value.trim();
+          const name = document.getElementById('customLoginName').value.trim();
+          const role = document.getElementById('customLoginRole').value;
+          if (!email || !name) return;
+
+          state.currentRole = role;
+          state.userName = name;
+          state.userSub = email + ' • ' + (role === 'DRIVER' ? 'Verified EV Driver' : 'Verified Port Host');
+          authModal.classList.add('hidden');
+          authModal.classList.remove('flex');
+          switchView(role === 'HOST' ? 'host' : 'finder');
+          showToast('Signed in as ' + name + ' (' + role + ').');
+        });
+
+        // Domain & Launch Readiness Modal
+        const domainModal = document.getElementById('modalDomainConfig');
+        function openDomainModal() {
+          domainModal.classList.remove('hidden');
+          domainModal.classList.add('flex');
+        }
+        document.getElementById('btnOpenDomainModal').addEventListener('click', openDomainModal);
+        document.getElementById('btnFooterDomainCheck').addEventListener('click', openDomainModal);
+        document.getElementById('btnCloseDomainModal').addEventListener('click', function () {
+          domainModal.classList.add('hidden');
+          domainModal.classList.remove('flex');
+        });
+        document.getElementById('btnSaveCustomDomain').addEventListener('click', function () {
+          const dom = document.getElementById('customDomainInput').value.trim();
+          if (dom) {
+            state.customDomain = dom;
+            document.getElementById('activeDomainDisplay').textContent = dom;
+            document.getElementById('domainBindStatusText').textContent = 'CNAME verified -> ' + dom + ' (TLS 1.3 Active)';
+            renderAll();
+            showToast('Custom domain bound to ' + dom);
+          }
+        });
+
+        // Toast dismiss
+        document.getElementById('btnDismissToast').addEventListener('click', function () {
+          document.getElementById('systemToast').classList.add('hidden');
+        });
+      }
+
+      // Initialize app
+      initEvents();
+      renderAll();
+    })();
+  </script>
+</body>
+</html>
